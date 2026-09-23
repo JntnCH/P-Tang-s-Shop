@@ -16,6 +16,7 @@ import { Route as PrintersRouteImport } from './routes/printers'
 import { Route as ProductsRouteImport } from './routes/products'
 import { Route as ReceiveRouteImport } from './routes/receive'
 import { Route as ReorderRouteImport } from './routes/reorder'
+import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StockRouteImport } from './routes/stock'
 
@@ -54,6 +55,11 @@ const ReorderRoute = ReorderRouteImport.update({
   path: '/reorder',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ScanRoute = ScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/products': typeof ProductsRoute
   '/receive': typeof ReceiveRoute
   '/reorder': typeof ReorderRoute
+  '/scan': typeof ScanRoute
   '/settings': typeof SettingsRoute
   '/stock': typeof StockRoute
 }
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/products': typeof ProductsRoute
   '/receive': typeof ReceiveRoute
   '/reorder': typeof ReorderRoute
+  '/scan': typeof ScanRoute
   '/settings': typeof SettingsRoute
   '/stock': typeof StockRoute
 }
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/products': typeof ProductsRoute
   '/receive': typeof ReceiveRoute
   '/reorder': typeof ReorderRoute
+  '/scan': typeof ScanRoute
   '/settings': typeof SettingsRoute
   '/stock': typeof StockRoute
 }
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/receive'
     | '/reorder'
+    | '/scan'
     | '/settings'
     | '/stock'
   fileRoutesByTo: FileRoutesByTo
@@ -120,6 +130,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/receive'
     | '/reorder'
+    | '/scan'
     | '/settings'
     | '/stock'
   id:
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/receive'
     | '/reorder'
+    | '/scan'
     | '/settings'
     | '/stock'
   fileRoutesById: FileRoutesById
@@ -143,6 +155,7 @@ export interface RootRouteChildren {
   ProductsRoute: typeof ProductsRoute
   ReceiveRoute: typeof ReceiveRoute
   ReorderRoute: typeof ReorderRoute
+  ScanRoute: typeof ScanRoute
   SettingsRoute: typeof SettingsRoute
   StockRoute: typeof StockRoute
 }
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReorderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/scan': {
+      id: '/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -223,6 +243,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductsRoute: ProductsRoute,
   ReceiveRoute: ReceiveRoute,
   ReorderRoute: ReorderRoute,
+  ScanRoute: ScanRoute,
   SettingsRoute: SettingsRoute,
   StockRoute: StockRoute,
 }
