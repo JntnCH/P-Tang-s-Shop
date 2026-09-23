@@ -7,7 +7,8 @@ export function getLiffAccessToken() {
 }
 
 export async function initLineMiniApp() {
-  const liffId = import.meta.env.VITE_LINE_LIFF_ID ?? "2011710261-sOMIoQ5X";
+  const liffId = import.meta.env.VITE_LINE_LIFF_ID?.trim();
+  if (!liffId) throw new Error("ยังไม่ได้ตั้งค่า VITE_LINE_LIFF_ID สำหรับ LINE MINI App");
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
