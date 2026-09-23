@@ -6,6 +6,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
 
@@ -20,6 +21,17 @@ export const users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
+
+export const lineUsers = mysqlTable("lineUsers", {
+  id: int("id").autoincrement().primaryKey(),
+  lineUserId: varchar("lineUserId", { length: 64 }).notNull().unique(),
+  channelId: varchar("channelId", { length: 64 }).notNull(),
+  displayName: varchar("displayName", { length: 255 }),
+  pictureUrl: varchar("pictureUrl", { length: 1000 }),
+  canWrite: int("canWrite").notNull().default(0),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ channelIdx: index("line_users_channel_idx").on(table.channelId) }));
 
 export const products = mysqlTable("products", {
   id: int("id").autoincrement().primaryKey(),
@@ -77,16 +89,20 @@ export const stockMovements = mysqlTable("stockMovements", {
   referenceId: int("referenceId"),
   note: varchar("note", { length: 500 }),
   createdBy: int("createdBy").references(() => users.id),
+  lineUserId: varchar("lineUserId", { length: 64 }),
+  lineOperationKey: varchar("lineOperationKey", { length: 128 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({
   productIdx: index("stock_movements_product_idx").on(table.productId),
   typeIdx: index("stock_movements_type_idx").on(table.type),
   createdAtIdx: index("stock_movements_created_at_idx").on(table.createdAt),
   referenceIdx: index("stock_movements_reference_idx").on(table.referenceType, table.referenceId),
+  lineOperationIdx: uniqueIndex("stock_movements_line_operation_idx").on(table.lineUserId, table.lineOperationKey),
 }));
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type LineUser = typeof lineUsers.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = typeof products.$inferInsert;
 export type Inventory = typeof inventory.$inferSelect;

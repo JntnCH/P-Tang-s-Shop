@@ -7,4 +7,7 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  lineLiffId: process.env.VITE_LINE_LIFF_ID ?? "2011710261-sOMIoQ5X",
+  lineChannelId: process.env.LINE_CHANNEL_ID ?? "2011710261",
+  lineWriteUserIds: (process.env.LINE_WRITE_USER_IDS ?? "").split(",").map((value) => value.trim()).filter(Boolean),
 };

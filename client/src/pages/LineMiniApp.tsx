@@ -1,0 +1,38 @@
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2, Search, SlidersHorizontal, Store } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { initLineMiniApp } from "@/lib/liff";
+import { trpc } from "@/lib/trpc";
+
+type MovementType = "receive" | "issue" | "adjustment";
+const movementLabels: Record<MovementType, string> = { receive: "รับเข้า", issue: "จ่ายออก", adjustment: "ปรับยอด" };
+
+export default function LineMiniApp() {
+  const [ready, setReady] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [initError, setInitError] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [type, setType] = useState<MovementType>("receive");
+  const [quantity, setQuantity] = useState("1");
+  const [targetQuantity, setTargetQuantity] = useState("0");
+  const [note, setNote] = useState("");
+  const [operationKey, setOperationKey] = useState(() => crypto.randomUUID());
+  useEffect(() => { let mounted = true; initLineMiniApp().then(() => { if (mounted) setReady(true); }).catch((error: Error) => { if (mounted) setInitError(error.message || "เริ่มต้น LINE MINI App ไม่สำเร็จ"); }).finally(() => { if (mounted) setInitializing(false); }); return () => { mounted = false; }; }, []);
+  const filter = useMemo(() => ({ search, category: "all" as const, status: "all" as const }), [search]);
+  const productsQuery = trpc.products.list.useQuery(filter, { enabled: ready });
+  const meQuery = trpc.lineApp.me.useQuery(undefined, { enabled: ready });
+  const utils = trpc.useUtils();
+  const movementMutation = trpc.lineApp.movement.useMutation({ onSuccess: async (result) => { toast.success(result.idempotent ? "รายการนี้ถูกบันทึกไปแล้ว" : "บันทึก movement แล้ว"); setQuantity("1"); setTargetQuantity("0"); setNote(""); setOperationKey(crypto.randomUUID()); await Promise.all([productsQuery.refetch(), utils.inventory.summary.invalidate(), utils.inventory.movementSummary.invalidate()]); }, onError: (error) => toast.error(error.message) });
+  const selected = productsQuery.data?.find((product) => String(product.id) === selectedId);
+  const submit = (event: FormEvent) => { event.preventDefault(); if (!selected) return toast.error("กรุณาเลือกสินค้า"); if (!meQuery.data?.canWrite) return toast.error("บัญชีนี้ยังไม่มีสิทธิ์บันทึก movement"); if (type === "adjustment") { const target = Number(targetQuantity); if (!Number.isInteger(target) || target < 0) return toast.error("กรุณาระบุยอดใหม่เป็นจำนวนเต็มไม่ติดลบ"); if (!note.trim()) return toast.error("กรุณาระบุเหตุผลการปรับยอด"); movementMutation.mutate({ productId: selected.id, type, targetQuantity: target, note, operationKey }); return; } const value = Number(quantity); if (!Number.isInteger(value) || value <= 0) return toast.error("กรุณาระบุจำนวนเป็นจำนวนเต็มมากกว่า 0"); movementMutation.mutate({ productId: selected.id, type, quantity: value, note: note || undefined, operationKey }); };
+  if (initializing) return <LoadingState text="กำลังเชื่อมต่อ LINE MINI App…" />;
+  if (initError) return <div className="mx-auto max-w-md p-4"><Card className="border-0 shadow-[var(--shadow-card)]"><CardContent className="space-y-3 p-6 text-center"><Store className="mx-auto size-10 text-primary" /><h1 className="text-xl font-bold">เปิดผ่าน LINE MINI App</h1><p className="text-sm text-muted-foreground">{initError}</p><p className="text-xs text-muted-foreground">ตรวจสอบ LIFF Endpoint URL และ LIFF ID ใน LINE Developers Console</p></CardContent></Card></div>;
+  return <div className="mx-auto max-w-xl space-y-4 p-4"><div className="rounded-2xl bg-primary p-5 text-primary-foreground"><p className="text-sm opacity-80">Scan & Go</p><h1 className="mt-1 text-2xl font-bold">คลังสินค้าใน LINE</h1><p className="mt-1 text-sm opacity-80">{meQuery.data?.displayName ? `สวัสดี ${meQuery.data.displayName}` : "ค้นหาและบันทึกสินค้า"}</p></div>{meQuery.data && !meQuery.data.canWrite ? <div className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning-foreground">บัญชีนี้ดูข้อมูลได้ แต่ยังไม่มีสิทธิ์บันทึก movement<p className="mt-1 break-all text-xs opacity-80">LINE user ID: {meQuery.data.lineUserId}</p></div> : null}<Card className="border-0 shadow-[var(--shadow-card)]"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Search className="size-5 text-primary" />ค้นหาสินค้า</CardTitle></CardHeader><CardContent className="space-y-3"><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ชื่อสินค้า, SKU หรือ barcode" />{productsQuery.isLoading ? <LoadingState text="กำลังค้นหา…" /> : <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedId} onChange={(event) => { setSelectedId(event.target.value); const product = productsQuery.data?.find((item) => String(item.id) === event.target.value); if (product) setTargetQuantity(String(product.quantity)); }}><option value="">เลือกสินค้า ({productsQuery.data?.length ?? 0} รายการ)</option>{productsQuery.data?.map((product) => <option key={product.id} value={product.id}>{product.name} · เหลือ {product.quantity} {product.unit}</option>)}</select>}{selected ? <div className="rounded-xl bg-secondary/60 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{selected.name}</p><p className="text-xs text-muted-foreground">{selected.sku} · {selected.barcode}</p></div><Badge variant={selected.status === "out" ? "destructive" : selected.status === "low" ? "secondary" : "default"}>{selected.quantity} {selected.unit}</Badge></div></div> : null}</CardContent></Card><Card className="border-0 shadow-[var(--shadow-card)]"><CardHeader><CardTitle className="text-base">บันทึกการเคลื่อนไหว</CardTitle></CardHeader><CardContent><form className="space-y-4" onSubmit={submit}><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{(["receive", "issue", "adjustment"] as const).map((item) => <Button key={item} type="button" variant={type === item ? "default" : "outline"} className="gap-1" onClick={() => setType(item)}>{item === "receive" ? <ArrowDownToLine className="size-4" /> : item === "issue" ? <ArrowUpFromLine className="size-4" /> : <SlidersHorizontal className="size-4" />}{movementLabels[item]}</Button>)}</div>{type === "adjustment" ? <><Input type="number" min="0" step="1" value={targetQuantity} onChange={(event) => setTargetQuantity(event.target.value)} placeholder={`ยอดใหม่ (${selected?.unit ?? "หน่วย"})`} /><Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="เหตุผลการปรับยอด" /></> : <><Input type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder={`จำนวน (${selected?.unit ?? "หน่วย"})`} /><Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="หมายเหตุ (ถ้ามี)" /></>}<Button type="submit" className="w-full" disabled={!selected || !meQuery.data?.canWrite || movementMutation.isPending}>{movementMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : "บันทึก movement"}</Button></form></CardContent></Card></div>;
+}
+
+function LoadingState({ text }: { text: string }) { return <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{text}</div>; }

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { startLogin } from "./const";
+import { getLiffAccessToken } from "./lib/liff";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers() {
+        const headers: Record<string, string> = {};
         // Preview auto-login fallback: when the browser blocks iframe cookies
         // (Safari ITP / private browsing / WebView), the runtime mirrors the
         // session into sessionStorage so we can forward it as a Bearer token.
@@ -53,14 +55,14 @@ const trpcClient = trpc.createClient({
             const prefix = `${COOKIE_NAME}=`;
             const pair = raw.split(";").find(s => s.trim().startsWith(prefix));
             const token = pair?.trim().slice(prefix.length);
-            if (token) {
-              return { Authorization: `Bearer ${token}` };
-            }
+            if (token) headers.Authorization = `Bearer ${token}`;
           }
         } catch {
           // sessionStorage unavailable
         }
-        return {};
+        const liffToken = getLiffAccessToken();
+        if (liffToken) headers["X-LIFF-Access-Token"] = liffToken;
+        return headers;
       },
       fetch(input, init) {
         return globalThis.fetch(input, {

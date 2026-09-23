@@ -1,6 +1,6 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useLocation } from "wouter";
 import { Boxes, Printer, Settings } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
@@ -12,6 +12,7 @@ import Orders from "./pages/Orders";
 import ReceiveCheck from "./pages/ReceiveCheck";
 import Issue from "./pages/Issue";
 import History from "./pages/History";
+import LineMiniApp from "./pages/LineMiniApp";
 import NotFound from "./pages/NotFound";
 
 function ComingSoon({ title, phase, icon: Icon }: { title: string; phase: string; icon: typeof Boxes }) {
@@ -36,14 +37,12 @@ function ComingSoon({ title, phase, icon: Icon }: { title: string; phase: string
   );
 }
 
-function App() {
+function AppShell() {
+  const [location] = useLocation();
+  if (location === "/line-mini") return <LineMiniApp />;
   return (
-    <ErrorBoundary>
-      <ThemeProvider defaultTheme="light">
-        <TooltipProvider>
-          <Toaster />
-          <AppLayout>
-            <Switch>
+    <AppLayout>
+      <Switch>
               <Route path="/" component={Home} />
               <Route path="/products" component={Products} />
               <Route path="/stock" component={Stock} />
@@ -55,8 +54,18 @@ function App() {
               <Route path="/settings" component={() => <ComingSoon title="ตั้งค่า" phase="Phase 11" icon={Settings} />} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
-            </Switch>
-          </AppLayout>
+      </Switch>
+    </AppLayout>
+  );
+}
+
+function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider defaultTheme="light">
+        <TooltipProvider>
+          <Toaster />
+          <AppShell />
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
