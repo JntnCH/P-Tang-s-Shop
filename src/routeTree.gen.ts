@@ -10,33 +10,141 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HistoryRouteImport } from './routes/history'
+import { Route as IssueRouteImport } from './routes/issue'
+import { Route as PrintersRouteImport } from './routes/printers'
+import { Route as ProductsRouteImport } from './routes/products'
+import { Route as ReceiveRouteImport } from './routes/receive'
+import { Route as ReorderRouteImport } from './routes/reorder'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StockRouteImport } from './routes/stock'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IssueRoute = IssueRouteImport.update({
+  id: '/issue',
+  path: '/issue',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrintersRoute = PrintersRouteImport.update({
+  id: '/printers',
+  path: '/printers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsRoute = ProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceiveRoute = ReceiveRouteImport.update({
+  id: '/receive',
+  path: '/receive',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReorderRoute = ReorderRouteImport.update({
+  id: '/reorder',
+  path: '/reorder',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StockRoute = StockRouteImport.update({
+  id: '/stock',
+  path: '/stock',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/history': typeof HistoryRoute
+  '/issue': typeof IssueRoute
+  '/printers': typeof PrintersRoute
+  '/products': typeof ProductsRoute
+  '/receive': typeof ReceiveRoute
+  '/reorder': typeof ReorderRoute
+  '/settings': typeof SettingsRoute
+  '/stock': typeof StockRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/history': typeof HistoryRoute
+  '/issue': typeof IssueRoute
+  '/printers': typeof PrintersRoute
+  '/products': typeof ProductsRoute
+  '/receive': typeof ReceiveRoute
+  '/reorder': typeof ReorderRoute
+  '/settings': typeof SettingsRoute
+  '/stock': typeof StockRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/history': typeof HistoryRoute
+  '/issue': typeof IssueRoute
+  '/printers': typeof PrintersRoute
+  '/products': typeof ProductsRoute
+  '/receive': typeof ReceiveRoute
+  '/reorder': typeof ReorderRoute
+  '/settings': typeof SettingsRoute
+  '/stock': typeof StockRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/history'
+    | '/issue'
+    | '/printers'
+    | '/products'
+    | '/receive'
+    | '/reorder'
+    | '/settings'
+    | '/stock'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/history'
+    | '/issue'
+    | '/printers'
+    | '/products'
+    | '/receive'
+    | '/reorder'
+    | '/settings'
+    | '/stock'
+  id:
+    | '__root__'
+    | '/'
+    | '/history'
+    | '/issue'
+    | '/printers'
+    | '/products'
+    | '/receive'
+    | '/reorder'
+    | '/settings'
+    | '/stock'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  HistoryRoute: typeof HistoryRoute
+  IssueRoute: typeof IssueRoute
+  PrintersRoute: typeof PrintersRoute
+  ProductsRoute: typeof ProductsRoute
+  ReceiveRoute: typeof ReceiveRoute
+  ReorderRoute: typeof ReorderRoute
+  SettingsRoute: typeof SettingsRoute
+  StockRoute: typeof StockRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +156,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/issue': {
+      id: '/issue'
+      path: '/issue'
+      fullPath: '/issue'
+      preLoaderRoute: typeof IssueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/printers': {
+      id: '/printers'
+      path: '/printers'
+      fullPath: '/printers'
+      preLoaderRoute: typeof PrintersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products': {
+      id: '/products'
+      path: '/products'
+      fullPath: '/products'
+      preLoaderRoute: typeof ProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receive': {
+      id: '/receive'
+      path: '/receive'
+      fullPath: '/receive'
+      preLoaderRoute: typeof ReceiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reorder': {
+      id: '/reorder'
+      path: '/reorder'
+      fullPath: '/reorder'
+      preLoaderRoute: typeof ReorderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stock': {
+      id: '/stock'
+      path: '/stock'
+      fullPath: '/stock'
+      preLoaderRoute: typeof StockRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  HistoryRoute: HistoryRoute,
+  IssueRoute: IssueRoute,
+  PrintersRoute: PrintersRoute,
+  ProductsRoute: ProductsRoute,
+  ReceiveRoute: ReceiveRoute,
+  ReorderRoute: ReorderRoute,
+  SettingsRoute: SettingsRoute,
+  StockRoute: StockRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
