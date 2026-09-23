@@ -60,6 +60,8 @@ export type ProductFilters = {
   status?: "all" | "inStock" | "low" | "out";
 };
 
+export const DEFAULT_CATEGORIES = ["ทั่วไป", "เครื่องดื่ม", "อาหาร", "ขนม", "ของใช้ทั่วไป", "ของใช้ในบ้าน", "เครื่องปรุง"];
+
 export type ProductRow = {
   id: number;
   barcode: string;
@@ -148,7 +150,7 @@ export async function listCategories(): Promise<string[]> {
     .from(products)
     .where(eq(products.isActive, 1))
     .orderBy(asc(products.category));
-  return rows.map((row) => row.category);
+  return Array.from(new Set([...DEFAULT_CATEGORIES, ...rows.map((row) => row.category)])).sort((a, b) => a.localeCompare(b, "th"));
 }
 
 export async function getInventorySummary() {

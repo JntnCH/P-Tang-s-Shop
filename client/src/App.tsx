@@ -13,6 +13,7 @@ import ReceiveCheck from "./pages/ReceiveCheck";
 import Issue from "./pages/Issue";
 import History from "./pages/History";
 import LineMiniApp from "./pages/LineMiniApp";
+import SettingsPage from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 function ComingSoon({ title, phase, icon: Icon }: { title: string; phase: string; icon: typeof Boxes }) {
@@ -51,7 +52,7 @@ function AppShell() {
               <Route path="/reorder" component={Orders} />
               <Route path="/history" component={History} />
               <Route path="/printers" component={() => <ComingSoon title="เครื่องพิมพ์" phase="Phase 10" icon={Printer} />} />
-              <Route path="/settings" component={() => <ComingSoon title="ตั้งค่า" phase="Phase 11" icon={Settings} />} />
+              <Route path="/settings" component={SettingsPage} />
               <Route path="/404" component={NotFound} />
               <Route component={NotFound} />
       </Switch>

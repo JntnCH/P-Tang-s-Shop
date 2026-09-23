@@ -8,6 +8,7 @@ import { createProduct, deactivateProduct, getInventorySummary, listCategories, 
 import { createPurchaseOrder, getLatestPurchaseOrder, getSuggestedOrderItems, recordReceivedItem, sendPurchaseOrderToLine } from "./db-orders";
 import { adjustStock, issueStock, listMovements, getMovementSummary, receiveStock } from "./db-movements";
 import { verifyLineAccessToken } from "./line-auth";
+import { createUnit, deactivateUnit, listUnits, seedDefaultUnits, suggestSku, updateUnit } from "./db-units";
 
 const productInput = z.object({ barcode: z.string().trim().min(1, "กรุณาระบุบาร์โค้ด").max(64), sku: z.string().trim().min(1, "กรุณาระบุ SKU").max(64), name: z.string().trim().min(1, "กรุณาระบุชื่อสินค้า").max(255), category: z.string().trim().min(1).max(100), unit: z.string().trim().min(1).max(32), costPrice: z.number().finite().min(0), sellPrice: z.number().finite().min(0), minimumStock: z.number().int().min(0), quantity: z.number().int().min(0) });
 const filtersInput = z.object({ search: z.string().optional(), category: z.string().optional(), status: z.enum(["all", "inStock", "low", "out"]).optional() });
@@ -36,6 +37,13 @@ export const appRouter = router({
     create: publicProcedure.input(productInput).mutation(async ({ input }) => { try { return await createProduct(input); } catch (error) { return featureError(error); } }),
     update: publicProcedure.input(z.object({ id: z.number().int().positive(), data: productInput })).mutation(async ({ input }) => { try { return await updateProduct(input.id, input.data); } catch (error) { return featureError(error); } }),
     deactivate: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => { try { return await deactivateProduct(input.id); } catch (error) { return featureError(error); } }),
+    suggestSku: publicProcedure.input(z.object({ name: z.string().max(255), category: z.string().max(100) })).query(async ({ input }) => { try { return await suggestSku(input.name, input.category); } catch (error) { return featureError(error); } }),
+  }),
+  units: router({
+    list: publicProcedure.input(z.object({ includeInactive: z.boolean().optional() }).optional()).query(async ({ input }) => { try { const result = await listUnits(input?.includeInactive); return result.length > 0 ? result : seedDefaultUnits(); } catch (error) { return featureError(error); } }),
+    create: publicProcedure.input(z.object({ name: z.string().trim().min(1).max(32) })).mutation(async ({ input }) => { try { return await createUnit(input.name); } catch (error) { return featureError(error); } }),
+    update: publicProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().trim().min(1).max(32) })).mutation(async ({ input }) => { try { return await updateUnit(input.id, input.name); } catch (error) { return featureError(error); } }),
+    deactivate: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => { try { return await deactivateUnit(input.id); } catch (error) { return featureError(error); } }),
   }),
   inventory: router({
     summary: publicProcedure.query(async () => { try { return await getInventorySummary(); } catch (error) { return featureError(error); } }),

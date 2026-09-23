@@ -33,6 +33,14 @@ export const lineUsers = mysqlTable("lineUsers", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (table) => ({ channelIdx: index("line_users_channel_idx").on(table.channelId) }));
 
+export const units = mysqlTable("units", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 32 }).notNull().unique(),
+  isActive: int("isActive").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ activeIdx: index("units_active_idx").on(table.isActive) }));
+
 export const products = mysqlTable("products", {
   id: int("id").autoincrement().primaryKey(),
   barcode: varchar("barcode", { length: 64 }).notNull().unique(),
@@ -103,6 +111,8 @@ export const stockMovements = mysqlTable("stockMovements", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type LineUser = typeof lineUsers.$inferSelect;
+export type Unit = typeof units.$inferSelect;
+export type InsertUnit = typeof units.$inferInsert;
 export type Product = typeof products.$inferSelect;
 export type InsertProduct = typeof products.$inferInsert;
 export type Inventory = typeof inventory.$inferSelect;
