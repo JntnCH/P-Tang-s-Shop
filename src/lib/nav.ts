@@ -33,10 +33,8 @@ export const navItems: NavItem[] = [
 ];
 
 /** เมนูลัดด้านล่างสำหรับมือถือ */
-export const mobileNavItems: NavItem[] = [
-  navItems[0],
-  navItems[1],
-  navItems[7],
-  navItems[3],
-  navItems[5],
-];
+const mobilePaths = ["/", "/products", "/scan", "/receive", "/reorder"];
+
+export const mobileNavItems: NavItem[] = mobilePaths
+  .map((p) => navItems.find((i) => i.to === p))
+  .filter((i): i is NavItem => Boolean(i));
