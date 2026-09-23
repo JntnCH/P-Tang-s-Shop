@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb, listProducts, type ProductRow } from "./db";
-import { inventory, products, purchaseOrderItems, purchaseOrders } from "../drizzle/schema";
+import { applySignedStockMovement } from "./db-movements";
+import { products, purchaseOrderItems, purchaseOrders } from "../drizzle/schema";
 
 export type OrderItemInput = { productId: number; quantityOrdered: number };
 export type OrderItemRow = {
@@ -100,7 +101,9 @@ export async function recordReceivedItem(itemId: number, quantityReceived: numbe
     if (!current) throw new Error("ไม่พบรายการตรวจรับ");
     const delta = quantityReceived - current.item.quantityReceived;
     await tx.update(purchaseOrderItems).set({ quantityReceived, receivedAt: new Date() }).where(eq(purchaseOrderItems.id, itemId));
-    await tx.update(inventory).set({ quantity: sql`greatest(0, ${inventory.quantity} + ${delta})` }).where(eq(inventory.productId, current.item.productId));
+    if (delta !== 0) {
+      await applySignedStockMovement(tx, { productId: current.item.productId, type: delta > 0 ? "receive" : "adjustment", signedDelta: delta, referenceType: "purchase_order", referenceId: current.order.id, note: `ตรวจรับรายการสั่งซื้อ #${current.order.id}` });
+    }
     const siblingItems = await tx.select({ quantityOrdered: purchaseOrderItems.quantityOrdered, quantityReceived: purchaseOrderItems.quantityReceived }).from(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, current.order.id));
     const allMatched = siblingItems.every((item) => item.quantityReceived === item.quantityOrdered) && quantityReceived === current.item.quantityOrdered;
     const anyReceived = siblingItems.some((item) => item.quantityReceived > 0) || quantityReceived > 0;

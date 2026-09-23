@@ -6,6 +6,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { createProduct, deactivateProduct, getInventorySummary, listCategories, listProducts, updateProduct } from "./db";
 import { createPurchaseOrder, getLatestPurchaseOrder, getSuggestedOrderItems, recordReceivedItem, sendPurchaseOrderToLine } from "./db-orders";
+import { adjustStock, issueStock, listMovements, getMovementSummary } from "./db-movements";
 
 const productInput = z.object({ barcode: z.string().trim().min(1, "กรุณาระบุบาร์โค้ด").max(64), sku: z.string().trim().min(1, "กรุณาระบุ SKU").max(64), name: z.string().trim().min(1, "กรุณาระบุชื่อสินค้า").max(255), category: z.string().trim().min(1).max(100), unit: z.string().trim().min(1).max(32), costPrice: z.number().finite().min(0), sellPrice: z.number().finite().min(0), minimumStock: z.number().int().min(0), quantity: z.number().int().min(0) });
 const filtersInput = z.object({ search: z.string().optional(), category: z.string().optional(), status: z.enum(["all", "inStock", "low", "out"]).optional() });
@@ -21,7 +22,16 @@ export const appRouter = router({
     update: publicProcedure.input(z.object({ id: z.number().int().positive(), data: productInput })).mutation(async ({ input }) => { try { return await updateProduct(input.id, input.data); } catch (error) { return featureError(error); } }),
     deactivate: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ input }) => { try { return await deactivateProduct(input.id); } catch (error) { return featureError(error); } }),
   }),
-  inventory: router({ summary: publicProcedure.query(async () => { try { return await getInventorySummary(); } catch (error) { return featureError(error); } }) }),
+  inventory: router({
+    summary: publicProcedure.query(async () => { try { return await getInventorySummary(); } catch (error) { return featureError(error); } }),
+    movementSummary: publicProcedure.query(async () => { try { return await getMovementSummary(); } catch (error) { return featureError(error); } }),
+    issue: publicProcedure.input(z.object({ productId: z.number().int().positive(), quantity: z.number().int().positive(), note: z.string().trim().max(500).optional() })).mutation(async ({ input }) => { try { return await issueStock(input); } catch (error) { return featureError(error); } }),
+    adjust: publicProcedure.input(z.object({ productId: z.number().int().positive(), targetQuantity: z.number().int().min(0), note: z.string().trim().min(1, "กรุณาระบุเหตุผลการปรับยอด").max(500) })).mutation(async ({ input }) => { try { return await adjustStock(input); } catch (error) { return featureError(error); } }),
+  }),
+  movements: router({
+    list: publicProcedure.input(z.object({ search: z.string().optional(), type: z.enum(["all", "receive", "issue", "adjustment", "opening"]).optional(), from: z.coerce.date().optional(), to: z.coerce.date().optional() }).optional()).query(async ({ input }) => { try { return await listMovements(input ?? {}); } catch (error) { return featureError(error); } }),
+    summary: publicProcedure.query(async () => { try { return await getMovementSummary(); } catch (error) { return featureError(error); } }),
+  }),
   orders: router({
     suggested: publicProcedure.query(async () => { try { return await getSuggestedOrderItems(); } catch (error) { return featureError(error); } }),
     latest: publicProcedure.query(async () => { try { return await getLatestPurchaseOrder(); } catch (error) { return featureError(error); } }),

@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch } from "wouter";
-import { Boxes, ClipboardList, History, Printer, Settings } from "lucide-react";
+import { Boxes, Printer, Settings } from "lucide-react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AppLayout } from "./components/AppLayout";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -10,6 +10,8 @@ import Products from "./pages/Products";
 import Stock from "./pages/Stock";
 import Orders from "./pages/Orders";
 import ReceiveCheck from "./pages/ReceiveCheck";
+import Issue from "./pages/Issue";
+import History from "./pages/History";
 import NotFound from "./pages/NotFound";
 
 function ComingSoon({ title, phase, icon: Icon }: { title: string; phase: string; icon: typeof Boxes }) {
@@ -46,9 +48,9 @@ function App() {
               <Route path="/products" component={Products} />
               <Route path="/stock" component={Stock} />
               <Route path="/receive" component={ReceiveCheck} />
-              <Route path="/issue" component={() => <ComingSoon title="จ่ายสินค้าออก" phase="Phase 6" icon={Boxes} />} />
+              <Route path="/issue" component={Issue} />
               <Route path="/reorder" component={Orders} />
-              <Route path="/history" component={() => <ComingSoon title="ประวัติรายการ" phase="Phase 9" icon={History} />} />
+              <Route path="/history" component={History} />
               <Route path="/printers" component={() => <ComingSoon title="เครื่องพิมพ์" phase="Phase 10" icon={Printer} />} />
               <Route path="/settings" component={() => <ComingSoon title="ตั้งค่า" phase="Phase 11" icon={Settings} />} />
               <Route path="/404" component={NotFound} />

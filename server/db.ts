@@ -1,6 +1,6 @@
 import { and, asc, eq, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { inventory, products, type InsertProduct, users, type InsertUser } from "../drizzle/schema";
+import { inventory, products, stockMovements, type InsertProduct, users, type InsertUser } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -207,6 +207,9 @@ export async function createProduct(input: ProductInput) {
     const inserted = await tx.insert(products).values(values);
     const productId = Number(inserted[0].insertId);
     await tx.insert(inventory).values({ productId, quantity: input.quantity });
+    if (input.quantity > 0) {
+      await tx.insert(stockMovements).values({ productId, type: "opening", quantity: input.quantity, quantityBefore: 0, quantityAfter: input.quantity, referenceType: "product_create", note: "ยอดตั้งต้นจากการเพิ่มสินค้า" });
+    }
     return productId;
   });
 }
@@ -218,6 +221,8 @@ export async function updateProduct(id: number, input: ProductInput) {
   if (!current[0]) throw new Error("ไม่พบสินค้าที่ต้องการแก้ไข");
   await ensureUniqueProduct(db, input, id);
   await db.transaction(async (tx) => {
+    const currentInventory = (await tx.select({ quantity: inventory.quantity }).from(inventory).where(eq(inventory.productId, id)).limit(1))[0];
+    const previousQuantity = currentInventory?.quantity ?? 0;
     await tx
       .update(products)
       .set({
@@ -235,6 +240,9 @@ export async function updateProduct(id: number, input: ProductInput) {
       .insert(inventory)
       .values({ productId: id, quantity: input.quantity })
       .onDuplicateKeyUpdate({ set: { quantity: input.quantity } });
+    if (input.quantity !== previousQuantity) {
+      await tx.insert(stockMovements).values({ productId: id, type: "adjustment", quantity: Math.abs(input.quantity - previousQuantity), quantityBefore: previousQuantity, quantityAfter: input.quantity, referenceType: "product_update", note: "ปรับจำนวนจากการแก้ไขสินค้า" });
+    }
   });
   return id;
 }

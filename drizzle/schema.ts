@@ -66,6 +66,25 @@ export const purchaseOrderItems = mysqlTable("purchaseOrderItems", {
   receivedAt: timestamp("receivedAt"),
 }, (table) => ({ orderIdx: index("purchase_order_items_order_idx").on(table.orderId), productIdx: index("purchase_order_items_product_idx").on(table.productId) }));
 
+export const stockMovements = mysqlTable("stockMovements", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull().references(() => products.id),
+  type: mysqlEnum("type", ["receive", "issue", "adjustment", "opening"]).notNull(),
+  quantity: int("quantity").notNull(),
+  quantityBefore: int("quantityBefore").notNull(),
+  quantityAfter: int("quantityAfter").notNull(),
+  referenceType: varchar("referenceType", { length: 64 }),
+  referenceId: int("referenceId"),
+  note: varchar("note", { length: 500 }),
+  createdBy: int("createdBy").references(() => users.id),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({
+  productIdx: index("stock_movements_product_idx").on(table.productId),
+  typeIdx: index("stock_movements_type_idx").on(table.type),
+  createdAtIdx: index("stock_movements_created_at_idx").on(table.createdAt),
+  referenceIdx: index("stock_movements_reference_idx").on(table.referenceType, table.referenceId),
+}));
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Product = typeof products.$inferSelect;
@@ -74,3 +93,4 @@ export type Inventory = typeof inventory.$inferSelect;
 export type InsertInventory = typeof inventory.$inferInsert;
 export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+export type StockMovement = typeof stockMovements.$inferSelect;

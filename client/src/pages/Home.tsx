@@ -1,6 +1,8 @@
 import { Link } from "wouter";
 import {
   AlertTriangle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Boxes,
   CircleSlash,
   ClipboardList,
@@ -43,6 +45,7 @@ type Summary = {
 
 export default function Home() {
   const summaryQuery = trpc.inventory.summary.useQuery();
+  const movementQuery = trpc.inventory.movementSummary.useQuery();
   const summary = summaryQuery.data as Summary | undefined;
 
   return (
@@ -90,6 +93,21 @@ export default function Home() {
             </Card>
           );
         })}
+      </div>
+
+      <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        <Card className="border-0 shadow-[var(--shadow-card)]">
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-success/10 text-success"><ArrowDownToLine className="size-5" /></div>
+            <div><p className="text-xs text-muted-foreground">รับเข้าใน ledger</p><p className="text-2xl font-bold tabular-nums">{movementQuery.isLoading ? "…" : movementQuery.data?.receive ?? 0} <span className="text-sm font-medium text-muted-foreground">หน่วย</span></p></div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-[var(--shadow-card)]">
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-destructive/10 text-destructive"><ArrowUpFromLine className="size-5" /></div>
+            <div><p className="text-xs text-muted-foreground">จ่ายออกใน ledger</p><p className="text-2xl font-bold tabular-nums">{movementQuery.isLoading ? "…" : movementQuery.data?.issue ?? 0} <span className="text-sm font-medium text-muted-foreground">หน่วย</span></p></div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="mb-6">
