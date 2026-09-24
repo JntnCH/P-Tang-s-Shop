@@ -20,13 +20,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -46,17 +40,8 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getLineServerConfigFn } from "@/lib/line-server-fn";
-import {
-  getClientLiffId,
-  getLineStatus,
-  type LineConfigStatus,
-} from "@/lib/line-service";
-import {
-  MasterStore,
-  type CategoryItem,
-  type UnitItem,
-  type ZoneItem,
-} from "@/lib/store";
+import { getClientLiffId, getLineStatus, type LineConfigStatus } from "@/lib/line-service";
+import { MasterStore, type CategoryItem, type UnitItem, type ZoneItem } from "@/lib/store";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -64,8 +49,7 @@ export const Route = createFileRoute("/settings")({
       { title: "ตั้งค่าระบบ | MiniMark" },
       {
         name: "description",
-        content:
-          "จัดการโซนสินค้า หมวดหมู่ หน่วยนับ และการเชื่อมต่อ LINE LIFF / Messaging API",
+        content: "จัดการโซนสินค้า หมวดหมู่ หน่วยนับ และการเชื่อมต่อ LINE LIFF / Messaging API",
       },
       { property: "og:title", content: "ตั้งค่าระบบ | MiniMark" },
       {
@@ -373,9 +357,7 @@ function SettingsPage() {
                   <Badge variant="outline" className="font-mono text-xs">
                     {cat.code}
                   </Badge>
-                  <span className="font-semibold text-sm text-foreground truncate">
-                    {cat.name}
-                  </span>
+                  <span className="font-semibold text-sm text-foreground truncate">{cat.name}</span>
                 </div>
                 <div className="flex items-center gap-1 shrink-0 ml-2">
                   <Button
@@ -568,8 +550,8 @@ function SettingsPage() {
                   Zero Secret Leakage Architecture
                 </AlertTitle>
                 <AlertDescription className="text-xs text-muted-foreground">
-                  ไม่มีการฝังคีย์ลับหรือโทเค็นใดๆ ในโค้ด client-side ข้อมูลถูก inject ผ่าน server-side
-                  environment variables เท่านั้น
+                  ไม่มีการฝังคีย์ลับหรือโทเค็นใดๆ ในโค้ด client-side ข้อมูลถูก inject ผ่าน
+                  server-side environment variables เท่านั้น
                 </AlertDescription>
               </Alert>
 
@@ -581,9 +563,7 @@ function SettingsPage() {
                       Client-side (LINE LIFF)
                     </span>
                     {lineStatus?.hasLiffId ? (
-                      <Badge className="bg-emerald-600 text-white text-[10px]">
-                        เชื่อมต่อแล้ว
-                      </Badge>
+                      <Badge className="bg-emerald-600 text-white text-[10px]">เชื่อมต่อแล้ว</Badge>
                     ) : (
                       <Badge variant="outline" className="text-amber-600 text-[10px]">
                         Fallback Web Share
@@ -607,9 +587,7 @@ function SettingsPage() {
                       Server-side (Messaging API)
                     </span>
                     {serverLineConfig?.hasAccessToken ? (
-                      <Badge className="bg-emerald-600 text-white text-[10px]">
-                        พร้อมทำงาน
-                      </Badge>
+                      <Badge className="bg-emerald-600 text-white text-[10px]">พร้อมทำงาน</Badge>
                     ) : (
                       <Badge variant="outline" className="text-muted-foreground text-[10px]">
                         รอตั้งค่า
@@ -620,7 +598,9 @@ function SettingsPage() {
                     <div className="flex justify-between">
                       <span>Channel Access Token:</span>
                       <span className="font-mono text-foreground">
-                        {serverLineConfig?.hasAccessToken ? "บันทึกใน Server แล้ว" : "ยังไม่ได้ระบุ"}
+                        {serverLineConfig?.hasAccessToken
+                          ? "บันทึกใน Server แล้ว"
+                          : "ยังไม่ได้ระบุ"}
                       </span>
                     </div>
                   </div>

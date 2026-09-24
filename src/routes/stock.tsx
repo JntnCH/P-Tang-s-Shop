@@ -1,19 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleSlash,
-  Package,
-  Search,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash, Package, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import {
-  CategorySelect,
-  FormatBadge,
-  ZoneSelect,
-} from "@/components/master/MasterSelects";
+import { CategorySelect, FormatBadge, ZoneSelect } from "@/components/master/MasterSelects";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -223,11 +213,7 @@ function StockPage() {
                     <span className="text-muted-foreground">คงเหลือ:</span>
                     <span
                       className={`text-base font-bold font-mono ${
-                        isOut
-                          ? "text-destructive"
-                          : isLow
-                            ? "text-amber-600"
-                            : "text-foreground"
+                        isOut ? "text-destructive" : isLow ? "text-amber-600" : "text-foreground"
                       }`}
                     >
                       {item.stock} {getUnitName(item.unitId)}
@@ -243,9 +229,7 @@ function StockPage() {
       {/* DESKTOP TABLE VIEW */}
       <Card className="hidden md:block rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">
-            รายการสต็อกสินค้า ({filtered.length} รายการ)
-          </CardTitle>
+          <CardTitle className="text-base">รายการสต็อกสินค้า ({filtered.length} รายการ)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="rounded-xl border overflow-x-auto">

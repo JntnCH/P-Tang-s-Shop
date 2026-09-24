@@ -157,7 +157,8 @@ function ScanPage() {
           <div className="rounded-lg bg-muted/60 p-3 text-xs space-y-1 text-muted-foreground">
             <div className="flex items-center justify-between font-semibold text-foreground">
               <span className="flex items-center gap-1">
-                <Activity className="size-3.5 text-primary" /> สแกนเนอร์ Diagnostics (@zxing/browser)
+                <Activity className="size-3.5 text-primary" /> สแกนเนอร์ Diagnostics
+                (@zxing/browser)
               </span>
               <Button
                 variant="ghost"

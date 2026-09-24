@@ -1,10 +1,6 @@
 {
   "name": "MiniMark",
   "description": "ระบบจัดการร้านโชว์ห่วย จัดการสินค้า สต็อก และการสั่งซื้อ",
-  "requestFramePermissions": [
-    "camera"
-  ],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

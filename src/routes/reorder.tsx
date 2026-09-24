@@ -20,13 +20,7 @@ import { FormatBadge, UnitSelect } from "@/components/master/MasterSelects";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -44,10 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  getLineServerConfigFn,
-  sendLineMessagingApiFn,
-} from "@/lib/line-server-fn";
+import { getLineServerConfigFn, sendLineMessagingApiFn } from "@/lib/line-server-fn";
 import {
   formatDailyOrderFlexMessage,
   formatOrderPlainText,
@@ -70,8 +61,7 @@ export const Route = createFileRoute("/reorder")({
       { title: "รายการสั่งซื้อประจำวัน & LINE Flex | MiniMark" },
       {
         name: "description",
-        content:
-          "สรุปสินค้าที่ต้องสั่งซื้อรายวันและส่ง Flex Message เข้ากลุ่ม LINE หรือแชทส่วนตัว",
+        content: "สรุปสินค้าที่ต้องสั่งซื้อรายวันและส่ง Flex Message เข้ากลุ่ม LINE หรือแชทส่วนตัว",
       },
       {
         property: "og:title",
@@ -150,8 +140,7 @@ function ReorderPage() {
       .catch(() => setServerConfig(null));
   }, []);
 
-  const getUnitName = (unitId: string) =>
-    units.find((u) => u.id === unitId)?.name || "ชิ้น";
+  const getUnitName = (unitId: string) => units.find((u) => u.id === unitId)?.name || "ชิ้น";
 
   const handleUpdateQuantity = (productId: string, delta: number) => {
     setOrderList((prev) =>
@@ -182,9 +171,7 @@ function ReorderPage() {
       const existing = prev.find((i) => i.productId === selectedProdId);
       if (existing) {
         return prev.map((i) =>
-          i.productId === selectedProdId
-            ? { ...i, quantity: i.quantity + Number(manualQty) }
-            : i,
+          i.productId === selectedProdId ? { ...i, quantity: i.quantity + Number(manualQty) } : i,
         );
       }
       return [
@@ -431,10 +418,7 @@ function ReorderPage() {
                         {idx + 1}. {item.product.name}
                       </div>
                       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                        <FormatBadge
-                          type={item.product.codeType}
-                          format={item.product.format}
-                        />
+                        <FormatBadge type={item.product.codeType} format={item.product.format} />
                         <span className="font-mono text-[11px] truncate">
                           {item.product.barcode}
                         </span>
@@ -535,9 +519,7 @@ function ReorderPage() {
                             {idx + 1}
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium text-foreground">
-                              {item.product.name}
-                            </div>
+                            <div className="font-medium text-foreground">{item.product.name}</div>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <FormatBadge
                                 type={item.product.codeType}
@@ -721,9 +703,7 @@ function ReorderPage() {
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="text-base sm:text-lg">
-              เพิ่มสินค้าในรายการสั่งซื้อ
-            </DialogTitle>
+            <DialogTitle className="text-base sm:text-lg">เพิ่มสินค้าในรายการสั่งซื้อ</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
