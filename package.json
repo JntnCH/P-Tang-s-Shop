@@ -13,7 +13,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "deploy": "npm run build && npx wrangler deploy"
+    "deploy": "npm run build && npx wrangler deploy",
+    "deploy:incremental": "node scripts/incremental-deploy.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"

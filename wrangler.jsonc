@@ -3,8 +3,14 @@
   "name": "a-1990s-style-mom-and-pop-shop",
   "compatibility_date": "2026-09-24",
   "compatibility_flags": ["nodejs_compat"],
-  "pages_build_output_dir": "./dist",
+  "main": ".output/server/index.mjs",
+  "assets": {
+    "directory": ".output/public",
+  },
+  "alias": {
+    "tslib": "node_modules/tslib/tslib.es6.js",
+  },
   "observability": {
-    "enabled": true
-  }
+    "enabled": true,
+  },
 }
