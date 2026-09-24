@@ -1,13 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "a-1990s-style-mom-and-pop-shop",
+  "name": "a-1990s-style-mom-and-pop-shop.",
   "compatibility_date": "2026-09-24",
   "compatibility_flags": ["nodejs_compat"],
-  "main": ".output/server/index.mjs",
-  "assets": {
-    "directory": ".output/public",
-  },
+  "pages_build_output_dir": "./dist",
   "observability": {
-    "enabled": true,
-  },
+    "enabled": true
+  }
 }
