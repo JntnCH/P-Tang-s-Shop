@@ -1,4 +1,4 @@
-name: "Build and Deploy to Google Cloud Run"
+Name: "Build and Deploy to Google Cloud Run"
 
 on:
   push:
@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: "my-project-id" # TODO: update to your Google Cloud project ID
-  GAR_LOCATION: "asia-east1" # Region for Artifact Registry (e.g., asia-east1, us-central1)
-  REGION: "asia-east1" # Region for Cloud Run service
-  SERVICE_NAME: "inventory-app" # Name of the Cloud Run service
-  REPOSITORY: "cloud-run-source-deploy" # Artifact Registry repository name
-  IMAGE_NAME: "inventory-app"
-  WORKLOAD_IDENTITY_PROVIDER: "projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider" # TODO: update if using Workload Identity Federation
+  PROJECT_ID: "openclaw-gcp-272026"
+  GAR_LOCATION: "asia-southeast3"
+  REGION: "asia-southeast3"
+  SERVICE_NAME: "a-1990s-style-mom-and-pop-shop"
+  REPOSITORY: "a-1990s-style-mom-and-pop-shop"
+  IMAGE_NAME: "a-1990s-style-mom-and-pop-shop"
+  WORKLOAD_PROVIDER: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
 
 jobs:
   build-and-deploy:
@@ -28,24 +28,20 @@ jobs:
       - name: "Checkout code"
         uses: "actions/checkout@v4"
 
-      # Authenticate to Google Cloud
-      # Option A: Workload Identity Federation (recommended)
-      # Option B: Service Account Key via secrets.GCP_SA_KEY (with credentials_json: '${{ secrets.GCP_SA_KEY }}')
+      # 1. Authenticate to Google Cloud (แก้ไขชื่อตัวแปรให้ตรงกับ env)
       - id: "auth"
         name: "Authenticate to Google Cloud"
         uses: "google-github-actions/auth@v2"
         with:
-          workload_identity_provider: "${{ env.WORKLOAD_IDENTITY_PROVIDER }}"
+          workload_identity_provider: "${{ env.WORKLOAD_PROVIDER }}"
 
-      # Authenticate Docker to Google Artifact Registry
+      # 2. Authenticate Docker to Google Artifact Registry (ใช้ action ทางการของ GCP)
       - name: "Docker Auth"
-        uses: "docker/login-action@v3"
+        uses: "google-github-actions/docker-auth@v2"
         with:
-          username: "oauth2accesstoken"
-          password: "${{ steps.auth.outputs.auth_token }}"
           registry: "${{ env.GAR_LOCATION }}-docker.pkg.dev"
 
-      # Build and Push Docker container
+      # 3. Build and Push Docker container
       - name: "Build and push Docker container"
         run: |-
           IMAGE_TAG="${GAR_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
@@ -59,7 +55,7 @@ jobs:
           docker push "${IMAGE_TAG}"
           docker push "${IMAGE_LATEST}"
 
-      # Deploy the Docker image to Google Cloud Run
+      # 4. Deploy the Docker image to Google Cloud Run
       - name: "Deploy to Google Cloud Run"
         uses: "google-github-actions/deploy-cloudrun@v2"
         with:
