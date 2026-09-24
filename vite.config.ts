@@ -6,17 +6,20 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+const isCloudflare =
+  process.env["NITRO_PRESET"] === "cloudflare-module" ||
+  process.env["NITRO_PRESET"] === "cloudflare-pages" ||
+  Boolean(process.env["CF_PAGES"]);
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
-    target: "cloudflare",
+    ...(isCloudflare ? { target: "cloudflare" } : {}),
   },
   nitro: {
-    preset:
-      process.env["NITRO_PRESET"] ||
-      (process.env["CF_PAGES"] ? "cloudflare-pages" : "cloudflare-module"),
+    preset: process.env["NITRO_PRESET"] || (isCloudflare ? "cloudflare-module" : "node-server"),
   },
   vite: {
     plugins: [],

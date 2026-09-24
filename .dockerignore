@@ -1,0 +1,16 @@
+node_modules
+.git
+.github
+.wrangler
+dist
+.output
+.tanstack
+.nitro
+.vscode
+.idea
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+.dev.vars
+.env.local
