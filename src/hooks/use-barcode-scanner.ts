@@ -1,98 +1,165 @@
+import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type DetectedBarcode = { rawValue: string; format: string };
-
-type BarcodeDetectorLike = {
-  detect: (source: CanvasImageSource) => Promise<DetectedBarcode[]>;
-};
-
-type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
-
-const FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
-
-function getDetectorCtor(): BarcodeDetectorCtor | null {
-  if (typeof window === "undefined") return null;
-  const ctor = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-  return ctor ?? null;
-}
+import { classifyScanType, ScannerDeduplicator, type CodeType } from "@/lib/scanner-dedup";
 
 export type ScannerStatus = "idle" | "starting" | "scanning" | "error";
 
+export interface ScannerDiagnostics {
+  readerEngine: string;
+  hasCameraSupport: boolean;
+  activeDeviceId?: string;
+  lastScannedCode?: string;
+  lastScannedFormat?: string;
+  lastScannedType?: CodeType;
+  lastScannedAt?: string;
+  errorDetail?: string;
+}
+
+export type ScanCallback = (code: string, format?: string, type?: CodeType) => void;
+
+export interface UseBarcodeScannerOptions {
+  cooldownMs?: number;
+}
+
 /**
- * อ่านบาร์โค้ดจากกล้องหลังของมือถือด้วย BarcodeDetector API ของเบราว์เซอร์
- * (ไม่มี dependency เพิ่ม) — ถ้าเบราว์เซอร์ไม่รองรับ จะแจ้งให้กรอกด้วยมือแทน
+ * Modern Barcode & QR Scanner hook using @zxing/browser
+ * Works across all browsers (including Safari, Firefox, Chrome) without requiring BarcodeDetector.
  */
-export function useBarcodeScanner(onDetected: (code: string) => void) {
+export function useBarcodeScanner(
+  onDetected: ScanCallback,
+  options: UseBarcodeScannerOptions = {},
+) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const lastRef = useRef<{ code: string; at: number } | null>(null);
-  const onDetectedRef = useRef(onDetected);
+  const controlsRef = useRef<IScannerControls | null>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const dedupRef = useRef<ScannerDeduplicator>(
+    new ScannerDeduplicator({ cooldownMs: options.cooldownMs ?? 1800 }),
+  );
+  const onDetectedRef = useRef<ScanCallback>(onDetected);
   onDetectedRef.current = onDetected;
 
   const [status, setStatus] = useState<ScannerStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [supported, setSupported] = useState(true);
+  const [diagnostics, setDiagnostics] = useState<ScannerDiagnostics>({
+    readerEngine: "@zxing/browser (MultiFormat)",
+    hasCameraSupport: true,
+  });
 
   useEffect(() => {
-    setSupported(Boolean(getDetectorCtor()) && Boolean(navigator?.mediaDevices?.getUserMedia));
+    const hasMedia =
+      typeof navigator !== "undefined" && Boolean(navigator?.mediaDevices?.getUserMedia);
+    setSupported(hasMedia);
+    setDiagnostics((prev) => ({
+      ...prev,
+      hasCameraSupport: hasMedia,
+    }));
   }, []);
 
   const stop = useCallback(() => {
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
+    if (controlsRef.current) {
+      try {
+        controlsRef.current.stop();
+      } catch {
+        // Safe ignore
+      }
+      controlsRef.current = null;
+    }
+    if (videoRef.current) {
+      const srcObj = videoRef.current.srcObject as MediaStream | null;
+      if (srcObj) {
+        srcObj.getTracks().forEach((t) => t.stop());
+      }
+      videoRef.current.srcObject = null;
+    }
     setStatus("idle");
   }, []);
 
   const start = useCallback(async () => {
-    const Ctor = getDetectorCtor();
-    if (!Ctor || !navigator?.mediaDevices?.getUserMedia) {
+    if (typeof navigator === "undefined" || !navigator?.mediaDevices?.getUserMedia) {
       setSupported(false);
-      setError("เบราว์เซอร์นี้ยังไม่รองรับการสแกนด้วยกล้อง กรุณากรอกบาร์โค้ดด้วยมือ");
+      setError("เบราว์เซอร์นี้ไม่รองรับการเข้าถึงกล้อง กรุณากรอกรหัสด้วยมือ");
       setStatus("error");
       return;
     }
 
+    stop();
     setError(null);
+    setPermissionDenied(false);
     setStatus("starting");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (!video) return;
-      video.srcObject = stream;
-      video.setAttribute("playsinline", "true");
-      await video.play();
-      setStatus("scanning");
 
-      const detector = new Ctor({ formats: FORMATS });
-      const tick = async () => {
-        if (!streamRef.current || !videoRef.current) return;
-        try {
-          const results = await detector.detect(videoRef.current);
-          const code = results[0]?.rawValue?.trim();
-          if (code) {
-            const now = Date.now();
-            const last = lastRef.current;
-            if (!last || last.code !== code || now - last.at > 2000) {
-              lastRef.current = { code, at: now };
-              onDetectedRef.current(code);
+    try {
+      if (!readerRef.current) {
+        readerRef.current = new BrowserMultiFormatReader();
+      }
+
+      const video = videoRef.current;
+      if (!video) {
+        throw new Error("Video element is not mounted");
+      }
+
+      const constraints: MediaStreamConstraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      };
+
+      const controls = await readerRef.current.decodeFromConstraints(
+        constraints,
+        video,
+        (result, decodeErr) => {
+          if (result) {
+            const raw = result.getText()?.trim();
+            const formatNumber = result.getBarcodeFormat();
+            const formatStr = String(formatNumber);
+            const type = classifyScanType(formatStr);
+
+            if (raw) {
+              const accepted = dedupRef.current.shouldAccept(raw, formatStr);
+              if (accepted) {
+                const nowStr = new Date().toLocaleTimeString("th-TH");
+                setDiagnostics((prev) => ({
+                  ...prev,
+                  lastScannedCode: raw,
+                  lastScannedFormat: formatStr,
+                  lastScannedType: type,
+                  lastScannedAt: nowStr,
+                }));
+                onDetectedRef.current(raw, formatStr, type);
+              }
             }
           }
-        } catch {
-          /* เฟรมที่อ่านไม่ได้ ข้ามไป */
-        }
-        rafRef.current = requestAnimationFrame(() => void tick());
-      };
-      rafRef.current = requestAnimationFrame(() => void tick());
-    } catch {
-      setError("เปิดกล้องไม่สำเร็จ กรุณาอนุญาตการใช้งานกล้อง หรือกรอกบาร์โค้ดด้วยมือ");
+          if (decodeErr && decodeErr.name !== "NotFoundException") {
+            // Non-trivial errors log to diagnostics silently
+          }
+        },
+      );
+
+      controlsRef.current = controls;
+      setStatus("scanning");
+    } catch (err: unknown) {
+      const errName = (err as { name?: string })?.name ?? "";
+      const errMsg = (err as { message?: string })?.message ?? "";
+
+      let userMsg = "เปิดกล้องไม่สำเร็จ กรุณาตรวจสอบการอนุญาตกล้อง หรือกรอกรหัสด้วยมือ";
+      if (errName === "NotAllowedError" || errName === "PermissionDeniedError") {
+        userMsg =
+          "ไม่ได้รับอนุญาตให้ใช้กล้อง (Permission Denied) กรุณาอนุญาตสิทธิ์ในเบราว์เซอร์ หรือกรอกรหัสด้วยมือ";
+        setPermissionDenied(true);
+      } else if (errName === "NotFoundError" || errName === "DevicesNotFoundError") {
+        userMsg = "ไม่พบอุปกรณ์กล้องบนเครื่องนี้ กรุณากรอกรหัสด้วยมือ";
+      }
+
+      setError(userMsg);
+      setDiagnostics((prev) => ({
+        ...prev,
+        errorDetail: `${errName}: ${errMsg}`,
+      }));
       setStatus("error");
       stop();
     }
@@ -100,5 +167,19 @@ export function useBarcodeScanner(onDetected: (code: string) => void) {
 
   useEffect(() => stop, [stop]);
 
-  return { videoRef, status, error, supported, start, stop };
+  const resetDeduplication = useCallback(() => {
+    dedupRef.current.resetAll();
+  }, []);
+
+  return {
+    videoRef,
+    status,
+    error,
+    permissionDenied,
+    supported,
+    diagnostics,
+    start,
+    stop,
+    resetDeduplication,
+  };
 }

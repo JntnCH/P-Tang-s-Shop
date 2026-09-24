@@ -149,6 +149,14 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Prevent auto-zooming on iOS inputs while keeping desktop styling clean */
+  @media (max-width: 768px) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
   }
 }
 
@@ -157,4 +165,12 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
+}
+
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 1rem);
+}
+
+@utility pt-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
 }
