@@ -188,8 +188,13 @@ function ReorderPage() {
   };
 
   // Convert orderList to complete items with product data
-  const fullItems: (OrderFlexItem & { product: ProductItem })[] = orderList
-    .map((item) => {
+  type FullOrderItem = OrderFlexItem & {
+    product: ProductItem;
+    barcode: string;
+    priceEstimate: number;
+  };
+  const fullItems: FullOrderItem[] = orderList
+    .map((item): FullOrderItem | null => {
       const product = products.find((p) => p.id === item.productId);
       if (!product) return null;
       return {
@@ -201,7 +206,7 @@ function ReorderPage() {
         priceEstimate: product.costPrice * item.quantity,
       };
     })
-    .filter((i): i is OrderFlexItem & { product: ProductItem } => Boolean(i));
+    .filter((i): i is FullOrderItem => i !== null);
 
   const totalCost = fullItems.reduce((acc, curr) => acc + (curr.priceEstimate || 0), 0);
   const totalQuantity = fullItems.reduce((acc, curr) => acc + curr.quantity, 0);

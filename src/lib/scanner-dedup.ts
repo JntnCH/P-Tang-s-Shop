@@ -4,6 +4,7 @@
  */
 
 export type CodeType = "QR" | "Barcode";
+export type ScannedCodeType = CodeType;
 
 export interface DeduplicationOptions {
   /** Cooldown in milliseconds during which identical codes are suppressed. Default: 1500 */
@@ -23,10 +24,15 @@ export interface ScanRecord {
 
 /**
  * Classifies a format string or format number into 'QR' or 'Barcode'.
+ * Also accepts optional raw code as first param when format is second param.
  */
-export function classifyScanType(format?: string | number): CodeType {
-  if (format === undefined || format === null) return "Barcode";
-  const str = String(format).toUpperCase();
+export function classifyScanType(
+  formatOrCode?: string | number,
+  formatStr?: string | number,
+): CodeType {
+  const candidate = formatStr !== undefined ? formatStr : formatOrCode;
+  if (candidate === undefined || candidate === null) return "Barcode";
+  const str = String(candidate).toUpperCase();
   if (
     str.includes("QR") ||
     str === "11" || // BarcodeFormat.QR_CODE enum value
@@ -91,6 +97,13 @@ export class ScannerDeduplicator {
   }
 
   /**
+   * Alias for shouldAccept
+   */
+  shouldProcess(code: string, format?: string | number, now: number = Date.now()): boolean {
+    return this.shouldAccept(code, format, now);
+  }
+
+  /**
    * Executes a callback only if the code is accepted (not a duplicate).
    * Returns the ScanRecord if accepted, null if rejected.
    */
@@ -151,6 +164,13 @@ export class ScannerDeduplicator {
    */
   resetAll(): void {
     this.records.clear();
+  }
+
+  /**
+   * Alias for resetAll
+   */
+  reset(): void {
+    this.resetAll();
   }
 
   /**

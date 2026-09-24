@@ -95,21 +95,22 @@ function ProductsPage() {
 
   // Camera Scanner inside Product Form
   const [scannerActive, setScannerActive] = useState(false);
+  const handleScanDetected = (code: string, format?: string, type?: "QR" | "Barcode") => {
+    setFormBarcode(code);
+    setFormCodeType(type || "Barcode");
+    setFormFormat(format || "EAN_13");
+    stopScanner();
+    setScannerActive(false);
+  };
+
   const {
     videoRef,
-    isScanning,
+    status: scannerStatus,
     error: scanError,
-    startScanner,
-    stopScanner,
-  } = useBarcodeScanner({
-    onScan: (result) => {
-      setFormBarcode(result.text);
-      setFormCodeType(result.codeType);
-      setFormFormat(result.format);
-      stopScanner();
-      setScannerActive(false);
-    },
-    dedupCooldownMs: 1500,
+    start: startScanner,
+    stop: stopScanner,
+  } = useBarcodeScanner(handleScanDetected, {
+    cooldownMs: 1500,
   });
 
   const loadData = () => {

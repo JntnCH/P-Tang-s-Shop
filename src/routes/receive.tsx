@@ -167,6 +167,7 @@ function ReceiveCheckPage() {
         productName: item.productName,
         quantity: item.quantity,
         unit: item.unit,
+        scannedAt: item.scannedAt || new Date().toLocaleString("th-TH"),
       });
     });
 

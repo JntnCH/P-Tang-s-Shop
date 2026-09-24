@@ -418,6 +418,7 @@ export interface OrderFlexItem {
 }
 
 export function formatDailyOrderFlexMessage(items: OrderFlexItem[], dateStr?: string) {
+  const nowStr = new Date().toISOString();
   const lineOrders: LineOrderItem[] = items.map((i) => ({
     product: {
       id: i.barcode || i.name,
@@ -432,6 +433,7 @@ export function formatDailyOrderFlexMessage(items: OrderFlexItem[], dateStr?: st
       stock: 0,
       minStock: 0,
       reorderQuantity: i.quantity,
+      updatedAt: nowStr,
     },
     quantity: i.quantity,
     unitName: i.unitName,
@@ -440,6 +442,7 @@ export function formatDailyOrderFlexMessage(items: OrderFlexItem[], dateStr?: st
 }
 
 export function formatOrderPlainText(items: OrderFlexItem[], dateStr?: string): string {
+  const nowStr = new Date().toISOString();
   const lineOrders: LineOrderItem[] = items.map((i) => ({
     product: {
       id: i.barcode || i.name,
@@ -454,6 +457,7 @@ export function formatOrderPlainText(items: OrderFlexItem[], dateStr?: string): 
       stock: 0,
       minStock: 0,
       reorderQuantity: i.quantity,
+      updatedAt: nowStr,
     },
     quantity: i.quantity,
     unitName: i.unitName,
@@ -466,6 +470,7 @@ export async function sendDailyOrderToLine(
   target: LineShareTarget = "group",
   dateStr?: string,
 ): Promise<{ success: boolean; method?: string; error?: string }> {
+  const nowStr = new Date().toISOString();
   const lineOrders: LineOrderItem[] = items.map((i) => ({
     product: i.product || {
       id: i.barcode || i.name,
@@ -480,15 +485,19 @@ export async function sendDailyOrderToLine(
       stock: 0,
       minStock: 0,
       reorderQuantity: i.quantity,
+      updatedAt: nowStr,
     },
     quantity: i.quantity,
     unitName: i.unitName,
   }));
 
   const res = await sendOrderToLine(lineOrders, target);
-  return {
+  const result: { success: boolean; method?: string; error?: string } = {
     success: res.success,
     method: res.channel === "liff_picker" ? "share_target_picker" : "web_intent",
-    error: res.success ? undefined : res.message,
   };
+  if (!res.success && res.message) {
+    result.error = res.message;
+  }
+  return result;
 }
