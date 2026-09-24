@@ -15,8 +15,7 @@ export default defineConfig({
   },
   nitro: {
     preset:
-      process.env.NITRO_PRESET ||
-      (process.env.CF_PAGES || process.env.CLOUDFLARE ? "cloudflare-pages" : "node-server"),
+      process.env.NITRO_PRESET || (process.env.CF_PAGES ? "cloudflare-pages" : "cloudflare-module"),
   },
   vite: {
     plugins: [],

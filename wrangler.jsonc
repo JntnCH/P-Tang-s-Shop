@@ -5,9 +5,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": ".output/server/index.mjs",
   "assets": {
-    "directory": ".output/public"
+    "directory": ".output/public",
   },
   "observability": {
-    "enabled": true
-  }
+    "enabled": true,
+  },
 }
