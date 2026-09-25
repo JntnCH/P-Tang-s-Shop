@@ -11,22 +11,11 @@ on:
       - ".prettierignore"
       - "docs/**"
   workflow_dispatch:
-    inputs:
-      region:
-        description: "Google Cloud Run Region"
-        required: false
-        default: "asia-southeast1"
-        type: choice
-        options:
-          - "asia-southeast1"
-          - "asia-east1"
-          - "asia-southeast3"
-          - "us-central1"
 
 env:
   PROJECT_ID: "openclaw-gcp-272026"
   GAR_LOCATION: "asia-southeast3"
-  REGION: "${{ github.event.inputs.region || secrets.GCP_REGION || vars.GCP_REGION || 'asia-southeast1' }}"
+  REGION: "asia-southeast1"
   SERVICE_NAME: "a-1990s-style-mom-and-pop-shop"
   REPOSITORY: "a-1990s-style-mom-and-pop-shop"
   IMAGE_NAME: "a-1990s-style-mom-and-pop-shop"
@@ -52,23 +41,15 @@ jobs:
         run: |
           node scripts/incremental-deploy.mjs
 
-      # Authenticate to Google Cloud (Service Account Key)
-      - name: "Authenticate with Service Account Key"
-        if: "${{ secrets.GCP_SA_KEY != '' || secrets.GCP_CREDENTIALS != '' }}"
+      # Authenticate to Google Cloud (Workload Identity Federation or Service Account Key)
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
         uses: "google-github-actions/auth@v2"
         with:
           project_id: "${{ env.PROJECT_ID }}"
-          credentials_json: "${{ secrets.GCP_SA_KEY || secrets.GCP_CREDENTIALS }}"
-          token_format: "access_token"
-
-      # Authenticate to Google Cloud (Workload Identity Federation)
-      - name: "Authenticate with Workload Identity"
-        if: "${{ (secrets.GCP_SA_KEY == '' && secrets.GCP_CREDENTIALS == '') && (secrets.GCP_SERVICE_ACCOUNT != '' || env.WORKLOAD_IDENTITY_PROVIDER != '') }}"
-        uses: "google-github-actions/auth@v2"
-        with:
-          project_id: "${{ env.PROJECT_ID }}"
-          workload_identity_provider: "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || env.WORKLOAD_IDENTITY_PROVIDER }}"
-          service_account: "${{ secrets.GCP_SERVICE_ACCOUNT != '' && secrets.GCP_SERVICE_ACCOUNT || format('github-actions-sa@{0}.iam.gserviceaccount.com', env.PROJECT_ID) }}"
+          credentials_json: "${{ secrets.GCP_SA_KEY || secrets.GCP_CREDENTIALS || '' }}"
+          workload_identity_provider: "${{ env.WORKLOAD_IDENTITY_PROVIDER }}"
+          service_account: "${{ secrets.GCP_SERVICE_ACCOUNT || '' }}"
           token_format: "access_token"
 
       # Set up gcloud CLI
