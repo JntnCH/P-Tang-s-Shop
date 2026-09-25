@@ -22,13 +22,15 @@ function getChangedFiles(baseRef = "HEAD~1") {
   } catch {
     try {
       const status = execSync("git status --porcelain", { encoding: "utf8", stdio: "pipe" });
-      return status
+      const files = status
         .trim()
         .split("\n")
         .filter(Boolean)
         .map((line) => line.slice(3).trim());
+      return files.length > 0 ? files : ["src/", "package.json"];
     } catch {
-      return [];
+      // In environments without .git or on initial clone, treat as initial deployment
+      return ["src/", "package.json", "vite.config.ts"];
     }
   }
 }
