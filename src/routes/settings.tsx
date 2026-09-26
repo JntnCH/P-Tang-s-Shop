@@ -28,6 +28,7 @@ import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { StaffManagementTab } from "@/components/auth/StaffManagementTab";
+import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import { BackupRestoreTab } from "@/components/settings/BackupRestoreTab";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -656,14 +657,14 @@ function SettingsPage() {
                 Templates)
               </h2>
               <p className="text-xs text-muted-foreground">
-                แยกไฟล์ Flex Message แต่ละประเภทออกจากกัน เพื่อความสะดวกในการเพิ่ม แก้ไข ดีไซน์
-                และบำรุงรักษา
+                แยกไฟล์ Flex Message แต่ละประเภทออกจากกัน แสดงผลแบบ LINE Chat Bubble และ JSON
+                Payload
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               {/* Card 1: Purchase Order */}
-              <Card className="rounded-2xl border bg-card p-4 space-y-3">
+              <Card className="rounded-2xl border bg-card p-4 space-y-3 shadow-xs hover:border-emerald-500/50 transition-colors">
                 <div className="flex items-center justify-between">
                   <Badge className="bg-emerald-600 text-white text-xs">ใบสั่งซื้อสินค้า</Badge>
                   <span className="font-mono text-[11px] text-muted-foreground">
@@ -679,15 +680,15 @@ function SettingsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full rounded-xl text-xs gap-1.5"
+                  className="w-full rounded-xl text-xs gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300"
                   onClick={handlePreviewPOFlex}
                 >
-                  <Eye className="size-3.5" /> ดูตัวอย่างโครงสร้าง Flex
+                  <Eye className="size-3.5" /> ดูตัวอย่าง Flex Message
                 </Button>
               </Card>
 
               {/* Card 2: Stock Alert */}
-              <Card className="rounded-2xl border bg-card p-4 space-y-3">
+              <Card className="rounded-2xl border bg-card p-4 space-y-3 shadow-xs hover:border-destructive/50 transition-colors">
                 <div className="flex items-center justify-between">
                   <Badge variant="destructive" className="text-xs">
                     แจ้งเตือนสต็อก
@@ -707,15 +708,15 @@ function SettingsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full rounded-xl text-xs gap-1.5"
+                  className="w-full rounded-xl text-xs gap-1.5 font-semibold text-destructive"
                   onClick={handlePreviewStockAlertFlex}
                 >
-                  <Eye className="size-3.5" /> ดูตัวอย่างโครงสร้าง Flex
+                  <Eye className="size-3.5" /> ดูตัวอย่าง Flex Message
                 </Button>
               </Card>
 
               {/* Card 3: Daily Summary */}
-              <Card className="rounded-2xl border bg-card p-4 space-y-3">
+              <Card className="rounded-2xl border bg-card p-4 space-y-3 shadow-xs hover:border-blue-500/50 transition-colors">
                 <div className="flex items-center justify-between">
                   <Badge className="bg-blue-600 text-white text-xs">สรุปสต็อกรายวัน</Badge>
                   <span className="font-mono text-[11px] text-muted-foreground">
@@ -731,12 +732,43 @@ function SettingsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full rounded-xl text-xs gap-1.5"
+                  className="w-full rounded-xl text-xs gap-1.5 font-semibold text-blue-600 dark:text-blue-400"
                   onClick={handlePreviewDailySummaryFlex}
                 >
-                  <Eye className="size-3.5" /> ดูตัวอย่างโครงสร้าง Flex
+                  <Eye className="size-3.5" /> ดูตัวอย่าง Flex Message
                 </Button>
               </Card>
+            </div>
+
+            {/* Embedded Live Preview of Default Flex Message */}
+            <div className="pt-2">
+              <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                <MessageSquare className="size-4 text-primary" /> ตัวอย่างการแสดงผล Flex Message สด
+                (Live Preview)
+              </div>
+              <FlexMessageVisualizer
+                flexData={createPurchaseOrderFlexBubble([
+                  {
+                    name: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
+                    quantity: 30,
+                    unitName: "ซอง",
+                    costPrice: 6.0,
+                  },
+                  {
+                    name: "โค้ก น้ำอัดลม ออริจินัล 325ml",
+                    quantity: 48,
+                    unitName: "กระป๋อง",
+                    costPrice: 12.0,
+                  },
+                  {
+                    name: "เลย์ มันฝรั่งทอดกรอบ รสคลาสสิค 45g",
+                    quantity: 20,
+                    unitName: "ซอง",
+                    costPrice: 17.5,
+                  },
+                ])}
+                title="ตัวอย่างใบสั่งซื้อสินค้า (Purchase Order Flex)"
+              />
             </div>
           </TabsContent>
 
@@ -1225,20 +1257,29 @@ function SettingsPage() {
 
         {/* FLEX PREVIEW MODAL */}
         <Dialog open={previewFlexModalOpen} onOpenChange={setPreviewFlexModalOpen}>
-          <DialogContent className="w-[94vw] max-w-lg rounded-2xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
-            <DialogHeader>
+          <DialogContent className="w-[96vw] max-w-xl rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            <DialogHeader className="pb-2">
               <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
                 <FileCode2 className="size-5 text-emerald-600" /> {previewFlexTitle}
               </DialogTitle>
               <DialogDescription className="text-xs">
-                โครงสร้าง Flex Message JSON ที่พร้อมส่งผ่าน LINE Messaging API
+                การจำลองแสดงผล LINE Flex Message และโครงสร้าง JSON สำหรับ LINE Messaging API
               </DialogDescription>
             </DialogHeader>
-            <div className="rounded-xl bg-muted/80 p-3 overflow-x-auto border font-mono text-[11px]">
-              <pre className="text-foreground">{JSON.stringify(previewFlexJson, null, 2)}</pre>
+
+            <div className="py-1">
+              <FlexMessageVisualizer
+                flexData={previewFlexJson}
+                title={previewFlexTitle}
+                className="w-full"
+              />
             </div>
-            <DialogFooter className="pt-2">
-              <Button className="w-full rounded-xl" onClick={() => setPreviewFlexModalOpen(false)}>
+
+            <DialogFooter className="pt-2 border-t">
+              <Button
+                className="w-full sm:w-auto rounded-xl"
+                onClick={() => setPreviewFlexModalOpen(false)}
+              >
                 ปิดหน้าต่าง
               </Button>
             </DialogFooter>

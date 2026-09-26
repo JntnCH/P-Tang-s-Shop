@@ -71,7 +71,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { createStockAlertFlexBubble } from "@/lib/flex-templates";
+import { createPurchaseOrderFlexBubble, createStockAlertFlexBubble } from "@/lib/flex-templates";
+import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import { getLineServerConfigFn, sendLineMessagingApiFn } from "@/lib/line-server-fn";
 import {
   formatDailyOrderFlexMessage,
@@ -168,6 +169,11 @@ function ReorderPage() {
   const [pushMessageType, setPushMessageType] = useState<"PURCHASE_ORDER" | "STOCK_ALERT">(
     "STOCK_ALERT",
   );
+
+  // Flex Preview Visualizer Modal
+  const [flexPreviewOpen, setFlexPreviewOpen] = useState(false);
+  const [flexPreviewData, setFlexPreviewData] = useState<unknown>(null);
+  const [flexPreviewTitle, setFlexPreviewTitle] = useState("ตัวอย่าง LINE Flex Message");
 
   // Sending & processing status
   const [isSending, setIsSending] = useState(false);
@@ -545,6 +551,49 @@ function ReorderPage() {
     } finally {
       setIsSending(false);
     }
+  };
+
+  // Flex Preview Handlers
+  const handlePreviewOrderFlex = () => {
+    if (fullItems.length === 0) return;
+    const orderDateStr = new Date().toLocaleDateString("th-TH");
+    const flexMsg = formatDailyOrderFlexMessage(fullItems, orderDateStr);
+    setFlexPreviewData(flexMsg);
+    setFlexPreviewTitle(`ใบสั่งซื้อสินค้า (${fullItems.length} รายการ, รวม ${totalQuantity} ชิ้น)`);
+    setFlexPreviewOpen(true);
+  };
+
+  const handlePreviewStockAlertFlex = () => {
+    if (allReorderNeeded.length === 0) return;
+    const alertPayload = allReorderNeeded.map((p) => ({
+      name: p.name,
+      stock: p.stock,
+      minStock: p.minStock,
+      unitName: getUnitName(p.unitId),
+      status: (p.stock <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK") as "OUT_OF_STOCK" | "LOW_STOCK",
+    }));
+    const flexMsg = createStockAlertFlexBubble(alertPayload, { storeName: "ร้าน MiniMark" });
+    setFlexPreviewData(flexMsg);
+    setFlexPreviewTitle(`แจ้งเตือนสินค้าต้องสั่งซื้อ (${allReorderNeeded.length} รายการ)`);
+    setFlexPreviewOpen(true);
+  };
+
+  const handlePreviewPOHistoryFlex = (po: PurchaseOrderRecord) => {
+    const items = po.items.map((i) => ({
+      name: i.productName,
+      quantity: i.quantity,
+      unitName: i.unitName,
+      costPrice: i.costPrice,
+      barcode: i.barcode,
+    }));
+    const flexMsg = createPurchaseOrderFlexBubble(items, {
+      storeName: "ร้าน MiniMark",
+      orderNumber: po.orderNumber,
+      note: `ใบสั่งซื้อ #${po.orderNumber}`,
+    });
+    setFlexPreviewData(flexMsg);
+    setFlexPreviewTitle(`ใบสั่งซื้อ ${po.orderNumber}`);
+    setFlexPreviewOpen(true);
   };
 
   // Send via Server Messaging API push handler
@@ -1296,6 +1345,17 @@ function ReorderPage() {
 
                   {/* PO Save & Send Action Buttons */}
                   <div className="space-y-2 pt-1">
+                    {/* Flex Message Preview Button */}
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      disabled={fullItems.length === 0}
+                      className="h-11 w-full gap-2 border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/50 font-bold text-xs rounded-xl shadow-2xs active:scale-95"
+                      onClick={handlePreviewOrderFlex}
+                    >
+                      <Eye className="size-4 text-emerald-600" /> ดูตัวอย่าง LINE Flex Message
+                    </Button>
+
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         size="lg"
@@ -1546,6 +1606,15 @@ function ReorderPage() {
                   disabled={allReorderNeeded.length === 0}
                 >
                   <Plus className="size-3.5" /> เพิ่มทั้งหมดเข้าใบสั่งซื้อ
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 text-xs rounded-xl gap-1.5 border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 font-semibold"
+                  onClick={handlePreviewStockAlertFlex}
+                  disabled={allReorderNeeded.length === 0}
+                >
+                  <Eye className="size-3.5 text-emerald-600" /> ดูตัวอย่าง Flex Message
                 </Button>
                 <Button
                   size="sm"
@@ -1810,6 +1879,13 @@ function ReorderPage() {
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button
               variant="outline"
+              className="h-11 rounded-xl text-xs gap-1.5 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 font-semibold"
+              onClick={() => selectedPO && handlePreviewPOHistoryFlex(selectedPO)}
+            >
+              <Eye className="size-4 text-emerald-600" /> ดูตัวอย่าง Flex Message
+            </Button>
+            <Button
+              variant="outline"
               className="h-11 rounded-xl text-xs gap-1.5"
               onClick={handlePrintPODocument}
             >
@@ -1989,6 +2065,20 @@ function ReorderPage() {
 
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-xl text-xs gap-1.5"
+              onClick={() => {
+                if (pushMessageType === "STOCK_ALERT") {
+                  handlePreviewStockAlertFlex();
+                } else {
+                  handlePreviewOrderFlex();
+                }
+              }}
+            >
+              <Eye className="size-4 text-emerald-600" /> ดูตัวอย่าง Flex ก่อนส่ง
+            </Button>
+            <Button
               variant="outline"
               className="h-11 rounded-xl w-full sm:w-auto"
               onClick={() => setPushModalOpen(false)}
@@ -1996,11 +2086,42 @@ function ReorderPage() {
               ยกเลิก
             </Button>
             <Button
-              className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5"
+              className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white"
               onClick={handleSendServerPush}
               disabled={!targetIdInput.trim() || isSending}
             >
               <Send className="size-4" /> {isSending ? "กำลังส่ง..." : "ส่งข้อความทันที"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* UNIVERSAL FLEX MESSAGE PREVIEW MODAL */}
+      <Dialog open={flexPreviewOpen} onOpenChange={setFlexPreviewOpen}>
+        <DialogContent className="w-[96vw] max-w-xl rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+              <MessageCircle className="size-5 text-emerald-600" /> {flexPreviewTitle}
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              การจำลองหน้าจอแสดงผลจริงบนแอปพลิเคชัน LINE (LINE Flex Message UI Simulation)
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-1">
+            <FlexMessageVisualizer
+              flexData={flexPreviewData}
+              title={flexPreviewTitle}
+              className="w-full"
+            />
+          </div>
+
+          <DialogFooter className="pt-2 border-t">
+            <Button
+              className="w-full sm:w-auto rounded-xl font-semibold"
+              onClick={() => setFlexPreviewOpen(false)}
+            >
+              ปิดหน้าต่าง
             </Button>
           </DialogFooter>
         </DialogContent>
