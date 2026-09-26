@@ -5,7 +5,12 @@
  */
 
 import type { ProductItem } from "./store";
-import { createPurchaseOrderFlexBubble } from "./flex-templates/purchase-order-flex";
+import {
+  createDailySummaryFlexBubble,
+  createPurchaseOrderFlexBubble,
+  createStockAlertFlexBubble,
+  type FlexStockAlertItem,
+} from "./flex-templates";
 
 export interface LineOrderItem {
   product: ProductItem;
@@ -348,4 +353,50 @@ export async function sendDailyOrderToLine(
     result.error = res.message;
   }
   return result;
+}
+
+export async function sendStockAlertToLine(
+  alertItems: FlexStockAlertItem[],
+  target: LineShareTarget = "group",
+  storeName: string = "ร้าน MiniMark",
+): Promise<{ success: boolean; method?: string; error?: string }> {
+  const isAvailable = await initLiff();
+  const flexMsg = createStockAlertFlexBubble(alertItems, { storeName });
+
+  if (isAvailable && liffInstance?.isApiAvailable("shareTargetPicker")) {
+    try {
+      const res = await liffInstance.shareTargetPicker([flexMsg]);
+      if (res) {
+        return { success: true, method: "share_target_picker" };
+      }
+      return { success: false, error: "ผู้ใช้ยกเลิกการแชร์" };
+    } catch (e: unknown) {
+      console.warn("ShareTargetPicker failed, falling back to intent", e);
+    }
+  }
+
+  // Fallback to text intent
+  let text = `⚠️ แจ้งเตือนสต็อกสินค้าต้องสั่งซื้อ — ${storeName}\n`;
+  text += `────────────────────\n`;
+  alertItems.forEach((item, index) => {
+    const statusText =
+      item.status === "OUT_OF_STOCK" ? "สินค้าหมด (0)" : `เหลือ ${item.stock} ${item.unitName}`;
+    text += `${index + 1}. ${item.name} ➔ ${statusText}\n`;
+  });
+  text += `────────────────────\nกรุณาเข้าสู่ระบบ MiniMark เพื่อตรวจสอบสต็อก`;
+
+  const encoded = encodeURIComponent(text);
+  const url = `https://line.me/R/msg/text/?${encoded}`;
+
+  if (typeof window !== "undefined") {
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  return { success: true, method: "web_intent" };
 }

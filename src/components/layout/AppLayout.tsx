@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Menu, ScanLine, Store } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
+import { UserSwitcher } from "@/components/auth/UserSwitcher";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { mobileNavItems, navItems } from "@/lib/nav";
@@ -57,9 +58,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-background text-foreground lg:flex">
       {/* Desktop Sidebar */}
       <aside className="hidden w-72 shrink-0 border-r bg-sidebar lg:block">
-        <div className="sticky top-0 h-screen overflow-y-auto">
-          <Brand />
-          <NavList />
+        <div className="sticky top-0 h-screen overflow-y-auto flex flex-col justify-between">
+          <div>
+            <Brand />
+            <NavList />
+          </div>
+          <div className="p-3 border-t bg-muted/20">
+            <div className="text-[11px] text-muted-foreground font-semibold mb-1 px-1">
+              ผู้ใช้งานปัจจุบัน:
+            </div>
+            <UserSwitcher />
+          </div>
         </div>
       </aside>
 
@@ -79,9 +88,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   <Menu className="size-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[85vw] max-w-xs bg-sidebar p-0">
-                <Brand />
-                <NavList onNavigate={() => setOpen(false)} />
+              <SheetContent
+                side="left"
+                className="w-[85vw] max-w-xs bg-sidebar p-0 flex flex-col justify-between"
+              >
+                <div>
+                  <Brand />
+                  <NavList onNavigate={() => setOpen(false)} />
+                </div>
+                <div className="p-3 border-t">
+                  <UserSwitcher />
+                </div>
               </SheetContent>
             </Sheet>
 
@@ -94,17 +111,25 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1.5">
+            <UserSwitcher />
             <Button
               asChild
               variant="outline"
               size="sm"
-              className="h-9 px-3 gap-1.5 rounded-lg border-primary/30 text-xs font-semibold text-primary active:scale-95"
+              className="h-9 px-2.5 sm:px-3 gap-1 rounded-xl border-primary/30 text-xs font-semibold text-primary active:scale-95"
             >
               <Link to="/scan">
                 <ScanLine className="size-4" />
-                <span>สแกนด่วน</span>
+                <span className="hidden sm:inline">สแกนด่วน</span>
               </Link>
             </Button>
+          </div>
+        </header>
+
+        {/* Desktop Header bar with User Switcher */}
+        <header className="hidden lg:flex h-14 items-center justify-end px-8 border-b bg-card/50 backdrop-blur-sm sticky top-0 z-20">
+          <div className="flex items-center gap-3">
+            <UserSwitcher />
           </div>
         </header>
 

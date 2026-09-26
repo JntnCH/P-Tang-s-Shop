@@ -99,7 +99,7 @@ export interface PurchaseOrderRecord {
   sentViaLineAt?: string | undefined;
 }
 
-const DEFAULT_ZONES: ZoneItem[] = [
+export const DEFAULT_ZONES: ZoneItem[] = [
   {
     id: "zone-a",
     code: "Z-A",
@@ -132,7 +132,7 @@ const DEFAULT_ZONES: ZoneItem[] = [
   },
 ];
 
-const DEFAULT_CATEGORIES: CategoryItem[] = [
+export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: "cat-beverage", code: "BEV", name: "เครื่องดื่ม" },
   { id: "cat-snack", code: "SNK", name: "ขนมขบเคี้ยว" },
   { id: "cat-food", code: "FOD", name: "อาหารสำเร็จรูปและแห้ง" },
@@ -141,7 +141,7 @@ const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: "cat-general", code: "GEN", name: "สินค้าเบ็ดเตล็ด" },
 ];
 
-const DEFAULT_UNITS: UnitItem[] = [
+export const DEFAULT_UNITS: UnitItem[] = [
   { id: "unit-piece", name: "ชิ้น", shortName: "ชิ้น" },
   { id: "unit-pack", name: "แพ็ค", shortName: "แพ็ค" },
   { id: "unit-box", name: "กล่อง", shortName: "กล่อง" },
@@ -151,7 +151,7 @@ const DEFAULT_UNITS: UnitItem[] = [
   { id: "unit-crate", name: "ลัง", shortName: "ลัง" },
 ];
 
-const DEFAULT_FOLLOWERS: LineUserFollower[] = [
+export const DEFAULT_FOLLOWERS: LineUserFollower[] = [
   {
     userId: "U88f0192a83b27b9c1",
     displayName: "ผู้ดูแลร้าน (Admin Master)",
@@ -174,7 +174,82 @@ const DEFAULT_FOLLOWERS: LineUserFollower[] = [
   },
 ];
 
-const DEFAULT_PRODUCTS: ProductItem[] = [
+export const DEFAULT_MOVEMENTS: StockMovementLog[] = [
+  {
+    id: "mov-1",
+    timestamp: "2026-09-24 14:30",
+    productId: "prod-1",
+    productName: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
+    barcode: "8850124001153",
+    type: "RECEIVE",
+    quantity: 20,
+    previousStock: 8,
+    newStock: 28,
+    operator: "พนักงานสต็อก (Staff Store)",
+    note: "รับสินค้าเข้าจาก ซัพพลายเออร์ A",
+  },
+  {
+    id: "mov-2",
+    timestamp: "2026-09-24 16:15",
+    productId: "prod-1",
+    productName: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
+    barcode: "8850124001153",
+    type: "ISSUE",
+    quantity: 20,
+    previousStock: 28,
+    newStock: 8,
+    operator: "แคชเชียร์หน้าร้าน",
+    note: "ขายหน้าร้าน",
+  },
+  {
+    id: "mov-3",
+    timestamp: "2026-09-24 17:00",
+    productId: "prod-2",
+    productName: "โค้ก น้ำอัดลม ออริจินัล 325ml",
+    barcode: "8851717001018",
+    type: "RECEIVE",
+    quantity: 24,
+    previousStock: 5,
+    newStock: 29,
+    operator: "พนักงานสต็อก (Staff Store)",
+    note: "ตรวจรับสินค้าประจำสัปดาห์",
+  },
+];
+
+export const DEFAULT_PURCHASE_ORDERS: PurchaseOrderRecord[] = [
+  {
+    id: "po-101",
+    orderNumber: "PO-20260924-001",
+    createdAt: "2026-09-24 10:30 น.",
+    supplierName: "บริษัท ยูนิลีเวอร์ / ไทยน้ำทิพย์ จำกัด",
+    items: [
+      {
+        productId: "prod-1",
+        productName: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
+        barcode: "8850124001153",
+        quantity: 30,
+        unitName: "ซอง",
+        costPrice: 6.0,
+        total: 180.0,
+      },
+      {
+        productId: "prod-2",
+        productName: "โค้ก น้ำอัดลม ออริจินัล 325ml",
+        barcode: "8851717001018",
+        quantity: 24,
+        unitName: "กระป๋อง",
+        costPrice: 12.0,
+        total: 288.0,
+      },
+    ],
+    totalQuantity: 54,
+    totalCost: 468.0,
+    status: "ORDERED",
+    sentViaLineAt: "2026-09-24 10:32 น.",
+  },
+];
+
+export const DEFAULT_PRODUCTS: ProductItem[] = [
   {
     id: "prod-1",
     sku: "SKU-FOD-001",
@@ -287,7 +362,7 @@ const DEFAULT_PRODUCTS: ProductItem[] = [
   },
 ];
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   ZONES: "minimark_zones",
   CATEGORIES: "minimark_categories",
   UNITS: "minimark_units",
@@ -472,6 +547,100 @@ export const MasterStore = {
     return this.getProducts().find((p) => p.barcode === trimmed);
   },
 
+  // Stock Status and Alert Queries (Phase 4 & 5)
+  getStockStatus(product: ProductItem): "NORMAL" | "LOW_STOCK" | "OUT_OF_STOCK" {
+    if (product.stock <= 0) return "OUT_OF_STOCK";
+    if (product.stock <= product.minStock) return "LOW_STOCK";
+    return "NORMAL";
+  },
+  getReorderProducts(): ProductItem[] {
+    return this.getProducts().filter((p) => p.isActive !== false && p.stock <= p.minStock);
+  },
+  getLowStockProducts(): ProductItem[] {
+    return this.getProducts().filter(
+      (p) => p.isActive !== false && p.stock > 0 && p.stock <= p.minStock,
+    );
+  },
+  getOutOfStockProducts(): ProductItem[] {
+    return this.getProducts().filter((p) => p.isActive !== false && p.stock <= 0);
+  },
+  getNormalStockProducts(): ProductItem[] {
+    return this.getProducts().filter((p) => p.isActive !== false && p.stock > p.minStock);
+  },
+
+  /**
+   * PHASE 5: Smart Reorder Calculation Engine
+   * Strategy Options:
+   * - "TARGET_PAR": Fill up to targetStock (Target Stock - Current Stock)
+   * - "MINIMUM_RESTORE": Fill up to minStock + buffer (+20%)
+   * - "WEEKEND_BUFFER": 1.5x buffer for weekend rush
+   * - "DOUBLE_BUFFER": 2.0x buffer for long holiday or high demand
+   */
+  calculateSuggestedQuantity(
+    product: ProductItem,
+    strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
+    customMultiplier: number = 1.0,
+  ): number {
+    const current = Math.max(0, product.stock || 0);
+    const min = Math.max(1, product.minStock || 5);
+    const target = Math.max(min, product.targetStock || product.reorderQuantity || min * 2);
+
+    let calculated = 0;
+    switch (strategy) {
+      case "TARGET_PAR":
+        calculated = Math.max(0, target - current);
+        break;
+      case "MINIMUM_RESTORE":
+        calculated = Math.max(1, min + Math.ceil(min * 0.2) - current);
+        break;
+      case "WEEKEND_BUFFER":
+        calculated = Math.max(1, Math.ceil((target - current) * 1.5));
+        break;
+      case "DOUBLE_BUFFER":
+        calculated = Math.max(1, Math.ceil((target - current) * 2.0));
+        break;
+    }
+
+    if (customMultiplier > 0 && customMultiplier !== 1.0) {
+      calculated = Math.max(1, Math.ceil(calculated * customMultiplier));
+    }
+
+    // Default fallback if calculated is 0 but product is at/below minStock
+    if (calculated <= 0 && current <= min) {
+      calculated = Math.max(1, product.reorderQuantity || min);
+    }
+
+    return calculated;
+  },
+
+  getSmartReorderForecast(
+    strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
+    multiplier: number = 1.0,
+  ) {
+    const products = this.getReorderProducts();
+    return products.map((p) => {
+      const suggestedQty = this.calculateSuggestedQuantity(p, strategy, multiplier);
+      const isOutOfStock = p.stock <= 0;
+      const urgency = isOutOfStock
+        ? ("HIGH" as const)
+        : p.stock <= Math.ceil(p.minStock * 0.5)
+          ? ("HIGH" as const)
+          : ("MEDIUM" as const);
+      const estimatedCost = (p.costPrice || 0) * suggestedQty;
+
+      return {
+        product: p,
+        currentStock: p.stock,
+        minStock: p.minStock,
+        targetStock: p.targetStock || p.reorderQuantity || p.minStock * 2,
+        suggestedQuantity: suggestedQty,
+        estimatedCost,
+        urgency,
+        isOutOfStock,
+      };
+    });
+  },
+
   // Receives / Scans
   getReceives(): ReceiveItem[] {
     return safeGet<ReceiveItem[]>(STORAGE_KEYS.RECEIVES, []);
@@ -504,7 +673,7 @@ export const MasterStore = {
 
   // Stock Movement History
   getMovements(): StockMovementLog[] {
-    return safeGet<StockMovementLog[]>(STORAGE_KEYS.MOVEMENTS, []);
+    return safeGet<StockMovementLog[]>(STORAGE_KEYS.MOVEMENTS, DEFAULT_MOVEMENTS);
   },
   addMovement(log: Omit<StockMovementLog, "id" | "timestamp">) {
     const list = this.getMovements();
@@ -512,27 +681,204 @@ export const MasterStore = {
       new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH");
     const item: StockMovementLog = {
       ...log,
-      id: `mov-${Date.now()}`,
+      id: `mov-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: now,
     };
     safeSet(STORAGE_KEYS.MOVEMENTS, [item, ...list]);
     return item;
   },
-
-  // Purchase Orders
-  getPurchaseOrders(): PurchaseOrderRecord[] {
-    return safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, []);
+  clearMovements() {
+    safeSet(STORAGE_KEYS.MOVEMENTS, []);
   },
-  savePurchaseOrder(order: Omit<PurchaseOrderRecord, "id" | "createdAt">) {
+
+  // High-level Inventory Operations with Automatic Audit Trail
+  receiveStock(
+    productIdentifier: string,
+    quantity: number,
+    operator: string = "พนักงานสต็อก",
+    note?: string,
+  ): { success: boolean; product?: ProductItem; movement?: StockMovementLog; error?: string } {
+    if (quantity <= 0) return { success: false, error: "จำนวนรับเข้าต้องมากกว่า 0" };
+
+    const products = this.getProducts();
+    const target = products.find(
+      (p) => p.id === productIdentifier || p.barcode === productIdentifier,
+    );
+
+    if (!target) return { success: false, error: "ไม่พบสินค้าในระบบ" };
+
+    const prevStock = Number(target.stock) || 0;
+    const newStock = prevStock + Number(quantity);
+
+    this.updateProduct(target.id, { stock: newStock });
+
+    const movement = this.addMovement({
+      productId: target.id,
+      productName: target.name,
+      barcode: target.barcode,
+      type: "RECEIVE",
+      quantity: Number(quantity),
+      previousStock: prevStock,
+      newStock,
+      operator: operator || "พนักงานสต็อก",
+      note: note || `รับสินค้าเข้าสต็อก +${quantity}`,
+    });
+
+    return { success: true, product: { ...target, stock: newStock }, movement };
+  },
+
+  issueStock(
+    productIdentifier: string,
+    quantity: number,
+    operator: string = "แคชเชียร์/ผู้เบิก",
+    note?: string,
+  ): { success: boolean; product?: ProductItem; movement?: StockMovementLog; error?: string } {
+    if (quantity <= 0) return { success: false, error: "จำนวนจ่ายออกต้องมากกว่า 0" };
+
+    const products = this.getProducts();
+    const target = products.find(
+      (p) => p.id === productIdentifier || p.barcode === productIdentifier,
+    );
+
+    if (!target) return { success: false, error: "ไม่พบสินค้าในระบบ" };
+
+    const prevStock = Number(target.stock) || 0;
+    const newStock = Math.max(0, prevStock - Number(quantity));
+
+    this.updateProduct(target.id, { stock: newStock });
+
+    const movement = this.addMovement({
+      productId: target.id,
+      productName: target.name,
+      barcode: target.barcode,
+      type: "ISSUE",
+      quantity: Number(quantity),
+      previousStock: prevStock,
+      newStock,
+      operator: operator || "แคชเชียร์/ผู้เบิก",
+      note: note || `จ่ายสินค้าออกจากสต็อก -${quantity}`,
+    });
+
+    return { success: true, product: { ...target, stock: newStock }, movement };
+  },
+
+  adjustStock(
+    productIdentifier: string,
+    newQuantity: number,
+    operator: string = "ผู้ดูแลระบบ",
+    reason: string = "ปรับปรุงยอดนับสต็อกจริง",
+  ): { success: boolean; product?: ProductItem; movement?: StockMovementLog; error?: string } {
+    const products = this.getProducts();
+    const target = products.find(
+      (p) => p.id === productIdentifier || p.barcode === productIdentifier,
+    );
+
+    if (!target) return { success: false, error: "ไม่พบสินค้าในระบบ" };
+
+    const prevStock = Number(target.stock) || 0;
+    const newStock = Math.max(0, Number(newQuantity));
+    const delta = newStock - prevStock;
+
+    this.updateProduct(target.id, { stock: newStock });
+
+    const movement = this.addMovement({
+      productId: target.id,
+      productName: target.name,
+      barcode: target.barcode,
+      type: "ADJUST",
+      quantity: Math.abs(delta),
+      previousStock: prevStock,
+      newStock,
+      operator: operator || "ผู้ดูแลระบบ",
+      note: reason || `ปรับยอดสต็อก (${delta >= 0 ? "+" : ""}${delta})`,
+    });
+
+    return { success: true, product: { ...target, stock: newStock }, movement };
+  },
+
+  // Purchase Orders (Phase 6 Management & Lifecycle)
+  getPurchaseOrders(): PurchaseOrderRecord[] {
+    return safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
+  },
+  getPurchaseOrderById(id: string): PurchaseOrderRecord | undefined {
+    return this.getPurchaseOrders().find((po) => po.id === id);
+  },
+  savePurchaseOrder(
+    order: Omit<PurchaseOrderRecord, "id" | "createdAt" | "orderNumber"> & {
+      orderNumber?: string;
+    },
+  ): PurchaseOrderRecord {
     const list = this.getPurchaseOrders();
     const now =
       new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH");
+    const d = new Date();
+    const dateCode = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+      d.getDate(),
+    ).padStart(2, "0")}`;
+    const seq = String(list.length + 1).padStart(3, "0");
+    const generatedOrderNum = order.orderNumber || `PO-${dateCode}-${seq}`;
+
     const newOrder: PurchaseOrderRecord = {
       ...order,
-      id: `po-${Date.now()}`,
+      orderNumber: generatedOrderNum,
+      id: `po-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: now,
     };
     safeSet(STORAGE_KEYS.PURCHASE_ORDERS, [newOrder, ...list]);
     return newOrder;
+  },
+  updatePurchaseOrderStatus(
+    id: string,
+    status: "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED",
+    extra?: { sentViaLineAt?: string },
+  ): PurchaseOrderRecord | undefined {
+    const list = this.getPurchaseOrders();
+    const target = list.find((p) => p.id === id);
+    if (!target) return undefined;
+
+    const updated: PurchaseOrderRecord = {
+      ...target,
+      status,
+      ...(extra?.sentViaLineAt ? { sentViaLineAt: extra.sentViaLineAt } : {}),
+    };
+    const nextList = list.map((p) => (p.id === id ? updated : p));
+    safeSet(STORAGE_KEYS.PURCHASE_ORDERS, nextList);
+    return updated;
+  },
+  deletePurchaseOrder(id: string): boolean {
+    const list = this.getPurchaseOrders();
+    const nextList = list.filter((p) => p.id !== id);
+    safeSet(STORAGE_KEYS.PURCHASE_ORDERS, nextList);
+    return true;
+  },
+  receivePurchaseOrderIntoStock(
+    poId: string,
+    operator: string = "พนักงานตรวจรับสินค้า",
+  ): { success: boolean; movements?: StockMovementLog[]; error?: string } {
+    const po = this.getPurchaseOrderById(poId);
+    if (!po) return { success: false, error: "ไม่พบใบสั่งซื้อสินค้าในระบบ" };
+    if (po.status === "RECEIVED") {
+      return { success: false, error: "ใบสั่งซื้อนี้ได้รับการตรวจรับเข้าสต็อกแล้ว" };
+    }
+
+    const createdMovements: StockMovementLog[] = [];
+
+    // Receive each item into stock and create movement logs
+    po.items.forEach((item) => {
+      const res = this.receiveStock(
+        item.productId,
+        item.quantity,
+        operator,
+        `ตรวจรับสินค้าตามใบสั่งซื้อ ${po.orderNumber}`,
+      );
+      if (res.movement) {
+        createdMovements.push(res.movement);
+      }
+    });
+
+    // Mark PO as RECEIVED
+    this.updatePurchaseOrderStatus(poId, "RECEIVED");
+
+    return { success: true, movements: createdMovements };
   },
 };

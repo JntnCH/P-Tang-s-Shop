@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertCircle,
   AlertTriangle,
+  Barcode as BarcodeIcon,
   Camera,
   CameraOff,
   CheckCircle2,
@@ -12,16 +13,21 @@ import {
   Plus,
   Power,
   PowerOff,
+  Printer,
   QrCode,
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Sparkles,
+  Tag,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { BarcodeDisplay } from "@/components/barcode/BarcodeDisplay";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { AuthService } from "@/lib/auth-rbac";
 import {
   CategorySelect,
   FormatBadge,
@@ -59,6 +65,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { generateStoreBarcode, inspectBarcode } from "@/lib/barcode-engine";
 import {
   MasterStore,
   type CategoryItem,
@@ -100,6 +107,10 @@ function ProductsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<ProductItem | null>(null);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
+
+  // Barcode Preview Modal (Phase 7)
+  const [barcodePreviewModalOpen, setBarcodePreviewModalOpen] = useState(false);
+  const [barcodePreviewProduct, setBarcodePreviewProduct] = useState<ProductItem | null>(null);
 
   // Form State
   const [formSku, setFormSku] = useState("");
@@ -161,17 +172,27 @@ function ProductsPage() {
     stop: stopSearchScanner,
   } = useBarcodeScanner(handleSearchScanDetected, { cooldownMs: 1500 });
 
+  const [canViewCostPrice, setCanViewCostPrice] = useState(
+    AuthService.hasPermission("canViewCostPrice"),
+  );
+
   const loadData = () => {
     setProducts(MasterStore.getProducts());
     setCategories(MasterStore.getCategories());
     setZones(MasterStore.getZones());
     setUnits(MasterStore.getUnits());
+    setCanViewCostPrice(AuthService.hasPermission("canViewCostPrice"));
   };
 
   useEffect(() => {
     loadData();
-    window.addEventListener("minimark_store_change", loadData);
-    return () => window.removeEventListener("minimark_store_change", loadData);
+    const handleStoreChange = () => loadData();
+    window.addEventListener("minimark_store_change", handleStoreChange);
+    window.addEventListener("minimark_auth_change", handleStoreChange);
+    return () => {
+      window.removeEventListener("minimark_store_change", handleStoreChange);
+      window.removeEventListener("minimark_auth_change", handleStoreChange);
+    };
   }, []);
 
   const validateSkuLive = (skuValue: string, currentId?: string) => {
@@ -226,6 +247,23 @@ function ProductsPage() {
     setBarcodeError(null);
     setScannerActive(false);
     setModalOpen(true);
+  };
+
+  const handleAutoGenerateBarcode = (formatType: "EAN_13" | "CODE_128" | "QR_CODE") => {
+    const generated = generateStoreBarcode(
+      formatType,
+      formSku.replace(/\W/g, "").slice(0, 4) || "PRD",
+    );
+    setFormBarcode(generated.barcode);
+    setFormCodeType(formatType === "QR_CODE" ? "QR" : "Barcode");
+    setFormFormat(generated.format);
+    validateBarcodeLive(generated.barcode, editingProduct?.id);
+  };
+
+  const handleOpenBarcodePreview = (product: ProductItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setBarcodePreviewProduct(product);
+    setBarcodePreviewModalOpen(true);
   };
 
   const handleOpenEdit = (product: ProductItem) => {
@@ -592,6 +630,15 @@ function ProductsPage() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="size-8 rounded-lg text-primary hover:text-primary"
+                      onClick={(e) => handleOpenBarcodePreview(p, e)}
+                      title="ดูบาร์โค้ด / พิมพ์ฉลาก"
+                    >
+                      <BarcodeIcon className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
                       onClick={() => handleOpenEdit(p)}
                       aria-label="แก้ไข"
@@ -632,9 +679,11 @@ function ProductsPage() {
                     <span className="font-bold text-foreground text-sm">
                       ฿{p.sellPrice.toLocaleString("th-TH")}
                     </span>
-                    <span className="text-muted-foreground text-[11px] ml-1.5">
-                      (ทุน ฿{p.costPrice})
-                    </span>
+                    {canViewCostPrice && (
+                      <span className="text-muted-foreground text-[11px] ml-1.5">
+                        (ทุน ฿{p.costPrice})
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1.5">
@@ -760,7 +809,9 @@ function ProductsPage() {
 
                         {/* Cost Price */}
                         <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                          ฿{product.costPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          {canViewCostPrice
+                            ? `฿${product.costPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
+                            : "฿•••"}
                         </TableCell>
 
                         {/* Sell Price */}
@@ -810,6 +861,15 @@ function ProductsPage() {
                         {/* Actions */}
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-8 text-primary hover:text-primary"
+                              onClick={(e) => handleOpenBarcodePreview(product, e)}
+                              title="ดูบาร์โค้ด / พิมพ์ฉลาก"
+                            >
+                              <BarcodeIcon className="size-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -898,31 +958,43 @@ function ProductsPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold">รหัสบาร์โค้ด / QR *</Label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={scannerActive ? "secondary" : "outline"}
-                    className="h-6 px-2 text-[11px] gap-1 rounded-md active:scale-95"
-                    onClick={() => {
-                      if (scannerActive) {
-                        stopScanner();
-                        setScannerActive(false);
-                      } else {
-                        setScannerActive(true);
-                        void startScanner();
-                      }
-                    }}
-                  >
-                    {scannerActive ? (
-                      <>
-                        <CameraOff className="size-3" /> ปิดกล้อง
-                      </>
-                    ) : (
-                      <>
-                        <Camera className="size-3" /> ยิงกล้อง
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-[10px] text-primary"
+                      onClick={() => handleAutoGenerateBarcode("EAN_13")}
+                      title="สุ่ม EAN-13 (885) พร้อม Check Digit"
+                    >
+                      <Sparkles className="size-3 mr-0.5" /> สุ่ม EAN-13
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={scannerActive ? "secondary" : "outline"}
+                      size="sm"
+                      className="h-6 px-2 text-[11px] gap-1 rounded-md active:scale-95"
+                      onClick={() => {
+                        if (scannerActive) {
+                          stopScanner();
+                          setScannerActive(false);
+                        } else {
+                          setScannerActive(true);
+                          void startScanner();
+                        }
+                      }}
+                    >
+                      {scannerActive ? (
+                        <>
+                          <CameraOff className="size-3" /> ปิดกล้อง
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="size-3" /> ยิงกล้อง
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
                 <Input
                   placeholder="เช่น 8850124001153"
@@ -933,9 +1005,21 @@ function ProductsPage() {
                     validateBarcodeLive(e.target.value, editingProduct?.id);
                   }}
                 />
-                {barcodeError && (
+                {barcodeError ? (
                   <p className="text-[10px] text-destructive mt-0.5">{barcodeError}</p>
-                )}
+                ) : formBarcode ? (
+                  <div className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                    {inspectBarcode(formBarcode).isValid ? (
+                      <span className="text-emerald-600 font-medium flex items-center gap-1">
+                        <CheckCircle2 className="size-3" /> {inspectBarcode(formBarcode).notes}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 flex items-center gap-1">
+                        <AlertTriangle className="size-3" /> {inspectBarcode(formBarcode).notes}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -1144,6 +1228,70 @@ function ProductsPage() {
               onClick={handleConfirmDelete}
             >
               ลบสินค้า
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* BARCODE PREVIEW & PRINT DIALOG (Phase 7) */}
+      <Dialog open={barcodePreviewModalOpen} onOpenChange={setBarcodePreviewModalOpen}>
+        <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+              <BarcodeIcon className="size-5 text-primary" />
+              ฉลากบาร์โค้ดสินค้า (Barcode & QR)
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              {barcodePreviewProduct?.name} ({barcodePreviewProduct?.sku})
+            </DialogDescription>
+          </DialogHeader>
+
+          {barcodePreviewProduct && (
+            <div className="py-2 space-y-3">
+              <BarcodeDisplay
+                value={barcodePreviewProduct.barcode}
+                format={
+                  barcodePreviewProduct.format ||
+                  (barcodePreviewProduct.codeType === "QR" ? "QR_CODE" : "EAN_13")
+                }
+                title={barcodePreviewProduct.name}
+                price={barcodePreviewProduct.sellPrice}
+                className="w-full shadow-none border"
+                showActions={true}
+              />
+
+              <div className="text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-xl space-y-1">
+                <div className="flex justify-between">
+                  <span>มาตรฐาน:</span>
+                  <span className="font-mono font-bold text-foreground">
+                    {barcodePreviewProduct.format || barcodePreviewProduct.codeType}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>สถานะความถูกต้อง:</span>
+                  <span className="text-emerald-600 font-semibold">
+                    {inspectBarcode(barcodePreviewProduct.barcode).notes}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 pt-2 border-t">
+            <Button
+              asChild
+              className="w-full sm:w-auto rounded-xl text-xs gap-1.5 font-semibold bg-primary text-primary-foreground"
+            >
+              <Link to="/printers">
+                <Tag className="size-3.5" /> พิมพ์ป้ายราคา & สติกเกอร์ (Phase 9)
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto rounded-xl text-xs"
+              onClick={() => setBarcodePreviewModalOpen(false)}
+            >
+              ปิดหน้าต่าง
             </Button>
           </DialogFooter>
         </DialogContent>

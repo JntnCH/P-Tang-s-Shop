@@ -81,15 +81,17 @@ function IssuePage() {
     if (issueList.length === 0) return;
 
     issueList.forEach((row) => {
-      const current = MasterStore.findByBarcode(row.product.barcode);
-      if (current) {
-        MasterStore.updateProduct(current.id, {
-          stock: Math.max(0, current.stock - row.quantity),
-        });
-      }
+      MasterStore.issueStock(
+        row.product.id,
+        row.quantity,
+        "แคชเชียร์/ผู้เบิกจ่าย",
+        `จ่ายสินค้าออก (${row.quantity} รายการ)`,
+      );
     });
 
-    setSuccessMsg(`บันทึกจ่ายสินค้าออก ${issueList.length} รายการ เรียบร้อยแล้ว`);
+    setSuccessMsg(
+      `บันทึกจ่ายสินค้าออก ${issueList.length} รายการ (ตัดยอดและบันทึกประวัติ Movement เรียบร้อยแล้ว)`,
+    );
     setIssueList([]);
     setTimeout(() => setSuccessMsg(""), 4000);
   };

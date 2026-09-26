@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  BarChart3,
   Boxes,
   CircleSlash,
   ClipboardList,
@@ -120,6 +121,13 @@ export function Dashboard() {
       color: "bg-emerald-600 text-white",
     },
     {
+      to: "/analytics",
+      label: "รายงาน & กำไร",
+      desc: "สินค้าขายดี/Margin",
+      icon: BarChart3,
+      color: "bg-amber-500/10 text-amber-600",
+    },
+    {
       to: "/products",
       label: "จัดการสินค้า",
       desc: "เพิ่ม/แก้ไข SKU",
@@ -129,7 +137,7 @@ export function Dashboard() {
     {
       to: "/settings",
       label: "ตั้งค่าระบบ",
-      desc: "โซน/หมวด/หน่วย",
+      desc: "โซน/หมวด/พนักงาน",
       icon: Settings,
       color: "bg-muted text-muted-foreground",
     },

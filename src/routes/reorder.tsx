@@ -1,19 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   AlertCircle,
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  Calculator,
   CheckCircle2,
   ChevronRight,
+  CircleSlash,
+  ClipboardCheck,
   ClipboardList,
   ExternalLink,
+  Eye,
+  FileCheck2,
+  FileText,
+  Filter,
+  Layers,
   MessageCircle,
   Package,
+  PackageCheck,
+  PackagePlus,
+  Pencil,
   Plus,
+  Printer,
+  RefreshCw,
+  Save,
   Send,
   Share2,
+  Sliders,
+  SlidersHorizontal,
+  Sparkles,
   Trash2,
+  TrendingUp,
+  User,
   Users,
+  Wallet,
+  XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FormatBadge, UnitSelect } from "@/components/master/MasterSelects";
@@ -24,12 +48,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -38,19 +70,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { createStockAlertFlexBubble } from "@/lib/flex-templates";
 import { getLineServerConfigFn, sendLineMessagingApiFn } from "@/lib/line-server-fn";
 import {
   formatDailyOrderFlexMessage,
   formatOrderPlainText,
   getLineStatus,
   sendDailyOrderToLine,
+  sendStockAlertToLine,
   type LineConfigStatus,
   type OrderFlexItem,
 } from "@/lib/line-service";
+import { PrinterService } from "@/lib/printer-service";
 import {
   MasterStore,
   type CategoryItem,
+  type LineUserFollower,
   type ProductItem,
+  type PurchaseOrderRecord,
   type UnitItem,
   type ZoneItem,
 } from "@/lib/store";
@@ -58,34 +96,61 @@ import {
 export const Route = createFileRoute("/reorder")({
   head: () => ({
     meta: [
-      { title: "รายการสั่งซื้อประจำวัน & LINE Flex | MiniMark" },
+      { title: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | MiniMark" },
       {
         name: "description",
-        content: "สรุปสินค้าที่ต้องสั่งซื้อรายวันและส่ง Flex Message เข้ากลุ่ม LINE หรือแชทส่วนตัว",
+        content:
+          "ระบบคำนวณจำนวนที่ควรสั่งซื้ออัจฉริยะ, จัดการใบสั่งซื้อ (Purchase Order Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4",
       },
       {
         property: "og:title",
-        content: "รายการสั่งซื้อประจำวัน & LINE Flex | MiniMark",
+        content: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | MiniMark",
       },
       {
         property: "og:description",
-        content: "ส่งใบสั่งซื้อสินค้าเข้า LINE กลุ่ม และ LINE ส่วนตัว",
+        content: "ระบบจัดการใบสั่งซื้อสินค้าครบวงจรและส่งเข้า LINE Flex Message",
       },
     ],
   }),
   component: ReorderPage,
 });
 
+type ReorderStrategy = "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER";
+
 function ReorderPage() {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [zones, setZones] = useState<ZoneItem[]>([]);
   const [units, setUnits] = useState<UnitItem[]>([]);
+  const [followers, setFollowers] = useState<LineUserFollower[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRecord[]>([]);
 
-  // Selected Order Items
+  // Active View Tab: "calculator" (Phase 5) | "alerts_hub" (Phase 4) | "create_po" | "po_history" (Phase 6)
+  const [activeTab, setActiveTab] = useState<
+    "calculator" | "alerts_hub" | "create_po" | "po_history"
+  >("calculator");
+
+  // Calculation Strategy State (Phase 5)
+  const [calculationStrategy, setCalculationStrategy] = useState<ReorderStrategy>("TARGET_PAR");
+  const [customMultiplier, setCustomMultiplier] = useState<number>(1.0);
+
+  // Filter in Alerts Hub
+  const [alertFilter, setAlertFilter] = useState<"ALL_ALERT" | "OUT_OF_STOCK" | "LOW_STOCK">(
+    "ALL_ALERT",
+  );
+
+  // Filter in PO History
+  const [poStatusFilter, setPoStatusFilter] = useState<
+    "ALL" | "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED"
+  >("ALL");
+
+  // Selected Order Items (Cart)
   const [orderList, setOrderList] = useState<
     { productId: string; quantity: number; unitId: string }[]
   >([]);
+  const [supplierNameInput, setSupplierNameInput] = useState(
+    "บริษัท ยูนิลีเวอร์ / ซัพพลายเออร์หลัก",
+  );
 
   // Add Item Modal
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -93,11 +158,18 @@ function ReorderPage() {
   const [manualQty, setManualQty] = useState(10);
   const [manualUnitId, setManualUnitId] = useState("");
 
+  // PO Detail & Print Modal (Phase 6)
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedPO, setSelectedPO] = useState<PurchaseOrderRecord | null>(null);
+
   // Server Messaging API Push Modal
   const [pushModalOpen, setPushModalOpen] = useState(false);
   const [targetIdInput, setTargetIdInput] = useState("");
+  const [pushMessageType, setPushMessageType] = useState<"PURCHASE_ORDER" | "STOCK_ALERT">(
+    "STOCK_ALERT",
+  );
 
-  // Sending status
+  // Sending & processing status
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error" | "info";
@@ -110,27 +182,40 @@ function ReorderPage() {
     hasAccessToken: boolean;
   } | null>(null);
 
-  const reloadData = () => {
+  const reloadData = useCallback(() => {
     const allProds = MasterStore.getProducts();
     const allCats = MasterStore.getCategories();
     const allZones = MasterStore.getZones();
     const allUnits = MasterStore.getUnits();
+    const allFollowers = MasterStore.getFollowers();
+    const allPOs = MasterStore.getPurchaseOrders();
 
     setProducts(allProds);
     setCategories(allCats);
     setZones(allZones);
     setUnits(allUnits);
+    setFollowers(allFollowers);
+    setPurchaseOrders(allPOs);
 
-    // Default: find items reaching minStock
-    const lowStockItems = allProds.filter((p) => p.stock <= p.minStock);
-    setOrderList(
-      lowStockItems.map((p) => ({
-        productId: p.id,
-        quantity: p.reorderQuantity || 10,
-        unitId: p.unitId,
-      })),
-    );
-  };
+    // Default populate order list from low stock items if empty
+    if (orderList.length === 0) {
+      const lowStockItems = allProds.filter((p) => p.isActive !== false && p.stock <= p.minStock);
+      setOrderList(
+        lowStockItems.map((p) => {
+          const suggested = MasterStore.calculateSuggestedQuantity(
+            p,
+            calculationStrategy,
+            customMultiplier,
+          );
+          return {
+            productId: p.id,
+            quantity: suggested,
+            unitId: p.unitId,
+          };
+        }),
+      );
+    }
+  }, [calculationStrategy, customMultiplier, orderList.length]);
 
   useEffect(() => {
     reloadData();
@@ -138,9 +223,41 @@ function ReorderPage() {
     getLineServerConfigFn()
       .then(setServerConfig)
       .catch(() => setServerConfig(null));
-  }, []);
+
+    const onStoreChange = () => reloadData();
+    window.addEventListener("minimark_store_change", onStoreChange);
+    return () => window.removeEventListener("minimark_store_change", onStoreChange);
+  }, [reloadData]);
 
   const getUnitName = (unitId: string) => units.find((u) => u.id === unitId)?.name || "ชิ้น";
+  const getCatName = (catId: string) => categories.find((c) => c.id === catId)?.name || "ทั่วไป";
+
+  // Categorized alerts
+  const outOfStockItems = products.filter((p) => p.isActive !== false && p.stock <= 0);
+  const lowStockItems = products.filter(
+    (p) => p.isActive !== false && p.stock > 0 && p.stock <= p.minStock,
+  );
+  const allReorderNeeded = products.filter((p) => p.isActive !== false && p.stock <= p.minStock);
+
+  // Phase 5: Smart Reorder Forecast List
+  const forecastList = MasterStore.getSmartReorderForecast(calculationStrategy, customMultiplier);
+  const forecastTotalEstimatedCost = forecastList.reduce(
+    (acc, curr) => acc + curr.estimatedCost,
+    0,
+  );
+  const forecastTotalQuantity = forecastList.reduce((acc, curr) => acc + curr.suggestedQuantity, 0);
+
+  const displayedAlertItems =
+    alertFilter === "OUT_OF_STOCK"
+      ? outOfStockItems
+      : alertFilter === "LOW_STOCK"
+        ? lowStockItems
+        : allReorderNeeded;
+
+  const filteredPOs = purchaseOrders.filter((po) => {
+    if (poStatusFilter === "ALL") return true;
+    return po.status === poStatusFilter;
+  });
 
   const handleUpdateQuantity = (productId: string, delta: number) => {
     setOrderList((prev) =>
@@ -187,6 +304,39 @@ function ReorderPage() {
     setAddModalOpen(false);
   };
 
+  const handleApplyForecastToCart = () => {
+    const calculatedItems = forecastList.map((f) => ({
+      productId: f.product.id,
+      quantity: f.suggestedQuantity,
+      unitId: f.product.unitId,
+    }));
+    setOrderList(calculatedItems);
+    setActiveTab("create_po");
+    setStatusMessage({
+      type: "success",
+      text: `นำเข้าจำนวนสั่งซื้อที่คำนวณตามสูตร (${calculatedItems.length} รายการ, รวม ${forecastTotalQuantity} ชิ้น) เข้าสู่ใบสั่งซื้อเรียบร้อยแล้ว`,
+    });
+  };
+
+  const handleApplySingleForecast = (item: (typeof forecastList)[0]) => {
+    setOrderList((prev) => {
+      const existing = prev.find((i) => i.productId === item.product.id);
+      if (existing) {
+        return prev.map((i) =>
+          i.productId === item.product.id ? { ...i, quantity: item.suggestedQuantity } : i,
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: item.product.id,
+          quantity: item.suggestedQuantity,
+          unitId: item.product.unitId,
+        },
+      ];
+    });
+  };
+
   // Convert orderList to complete items with product data
   type FullOrderItem = OrderFlexItem & {
     product: ProductItem;
@@ -211,8 +361,112 @@ function ReorderPage() {
   const totalCost = fullItems.reduce((acc, curr) => acc + (curr.priceEstimate || 0), 0);
   const totalQuantity = fullItems.reduce((acc, curr) => acc + curr.quantity, 0);
 
-  // Send to LINE handler
-  const handleSendToLine = async (target: "group" | "personal") => {
+  // Phase 6 Action: Save Purchase Order Record
+  const handleSavePO = (status: "DRAFT" | "ORDERED") => {
+    if (fullItems.length === 0) return;
+
+    const poRecord = MasterStore.savePurchaseOrder({
+      supplierName: supplierNameInput.trim() || undefined,
+      items: fullItems.map((f) => ({
+        productId: f.product.id,
+        productName: f.product.name,
+        barcode: f.product.barcode,
+        quantity: f.quantity,
+        unitName: f.unitName,
+        costPrice: f.product.costPrice,
+        total: f.priceEstimate,
+      })),
+      totalQuantity,
+      totalCost,
+      status,
+      sentViaLineAt:
+        status === "ORDERED"
+          ? new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH")
+          : undefined,
+    });
+
+    setPurchaseOrders(MasterStore.getPurchaseOrders());
+    setStatusMessage({
+      type: "success",
+      text: `สร้างใบสั่งซื้อ ${poRecord.orderNumber} (สถานะ: ${
+        status === "ORDERED" ? "สั่งซื้อแล้ว" : "ฉบับร่าง"
+      }) เรียบร้อยแล้ว`,
+    });
+    setActiveTab("po_history");
+  };
+
+  // Phase 6 Action: Receive Purchase Order into Stock
+  const handleReceivePO = (po: PurchaseOrderRecord) => {
+    if (confirm(`ต้องการตรวจรับสินค้าตามใบสั่งซื้อ ${po.orderNumber} เข้าสู่สต็อกใช่หรือไม่?`)) {
+      const res = MasterStore.receivePurchaseOrderIntoStock(
+        po.id,
+        "ผู้ดูแลระบบ / พนักงานตรวจรับสินค้า",
+      );
+      if (res.success) {
+        setStatusMessage({
+          type: "success",
+          text: `ตรวจรับสินค้าตามใบสั่งซื้อ ${po.orderNumber} (${po.items.length} รายการ, ${po.totalQuantity} ชิ้น) เข้าสต็อกและบันทึก Movement Log สำเร็จ`,
+        });
+        reloadData();
+      } else {
+        setStatusMessage({
+          type: "error",
+          text: res.error || "ไม่สามารถตรวจรับเข้าสต็อกได้",
+        });
+      }
+    }
+  };
+
+  // Phase 6 Action: Cancel PO
+  const handleCancelPO = (po: PurchaseOrderRecord) => {
+    if (confirm(`ต้องการยกเลิกใบสั่งซื้อ ${po.orderNumber} ใช่หรือไม่?`)) {
+      MasterStore.updatePurchaseOrderStatus(po.id, "CANCELLED");
+      setStatusMessage({
+        type: "info",
+        text: `ยกเลิกใบสั่งซื้อ ${po.orderNumber} เรียบร้อยแล้ว`,
+      });
+      reloadData();
+    }
+  };
+
+  // Phase 6 Action: Delete PO
+  const handleDeletePO = (po: PurchaseOrderRecord) => {
+    if (confirm(`ต้องการลบใบสั่งซื้อ ${po.orderNumber} ออกจากระบบถาวรใช่หรือไม่?`)) {
+      MasterStore.deletePurchaseOrder(po.id);
+      setStatusMessage({
+        type: "info",
+        text: `ลบใบสั่งซื้อ ${po.orderNumber} เรียบร้อยแล้ว`,
+      });
+      reloadData();
+    }
+  };
+
+  // View PO Detail Modal
+  const handleOpenPODetail = (po: PurchaseOrderRecord) => {
+    setSelectedPO(po);
+    setDetailModalOpen(true);
+  };
+
+  // Print A4 Document Handler
+  const handlePrintPODocument = () => {
+    if (selectedPO) {
+      PrinterService.addPrintJob({
+        jobTitle: `ใบสั่งซื้อสินค้า ${selectedPO.orderNumber}`,
+        jobType: "PURCHASE_ORDER",
+        printerId: "ptr-canon-a4",
+        printerName: "Canon PIXMA G3010 (เอกสาร PO / สต็อก)",
+        paperSize: "A4",
+        copies: 1,
+        status: "COMPLETED",
+        operator: "ผู้จัดทำใบสั่งซื้อ (Purchaser)",
+        payloadSummary: `${selectedPO.items.length} รายการ (${selectedPO.totalQuantity} ชิ้น) • ยอดเงินทุน ฿${selectedPO.totalCost.toFixed(2)}`,
+      });
+    }
+    window.print();
+  };
+
+  // Send Order to LINE
+  const handleSendOrderToLine = async (target: "group" | "personal") => {
     if (fullItems.length === 0) return;
     setIsSending(true);
     setStatusMessage(null);
@@ -227,6 +481,9 @@ function ReorderPage() {
       const res = await sendDailyOrderToLine(fullItems, target, orderDateStr);
 
       if (res.success) {
+        // Automatically save as ORDERED Purchase Order
+        handleSavePO("ORDERED");
+
         setStatusMessage({
           type: "success",
           text:
@@ -234,7 +491,7 @@ function ReorderPage() {
               ? `เปิด LINE Share เรียบร้อย กรุณาเลือก${
                   target === "group" ? "กลุ่มที่ต้องการส่ง" : "เพื่อน/แชทที่ต้องการส่ง"
                 }`
-              : "เปิดหน้าแชร์ LINE พร้อมข้อความสั่งซื้อเรียบร้อยแล้ว",
+              : "เปิดหน้าแชร์ LINE พร้อมบันทึกใบสั่งซื้อสถานะ 'สั่งซื้อแล้ว' เรียบร้อย",
         });
       } else {
         setStatusMessage({
@@ -252,39 +509,108 @@ function ReorderPage() {
     }
   };
 
-  // Send via Server Messaging API handler
-  const handleSendServerPush = async () => {
-    if (!targetIdInput.trim() || fullItems.length === 0) return;
+  // Send Stock Alert to LINE
+  const handleSendStockAlertToLine = async (target: "group" | "personal") => {
+    if (allReorderNeeded.length === 0) return;
     setIsSending(true);
+    setStatusMessage(null);
 
     try {
-      const orderDateStr = new Date().toLocaleDateString("th-TH", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-      const flexMsg = formatDailyOrderFlexMessage(fullItems, orderDateStr);
-      const plainText = formatOrderPlainText(fullItems, orderDateStr);
+      const alertPayload = allReorderNeeded.map((p) => ({
+        name: p.name,
+        stock: p.stock,
+        minStock: p.minStock,
+        unitName: getUnitName(p.unitId),
+        status: (p.stock <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK") as "OUT_OF_STOCK" | "LOW_STOCK",
+      }));
 
-      const res = await sendLineMessagingApiFn({
-        data: {
-          toUserIdOrGroupId: targetIdInput.trim(),
-          orderSummary: plainText,
-          flexMessage: flexMsg,
-        },
-      });
+      const res = await sendStockAlertToLine(alertPayload, target);
 
       if (res.success) {
         setStatusMessage({
           type: "success",
-          text: `ส่งข้อความผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput}`,
+          text: `ส่งการแจ้งเตือนสต็อกสินค้า ${allReorderNeeded.length} รายการเข้า LINE เรียบร้อยแล้ว`,
         });
-        setPushModalOpen(false);
       } else {
         setStatusMessage({
           type: "error",
-          text: res.error || "ไม่สามารถส่งผ่าน Server Messaging API ได้",
+          text: res.error || "ไม่สามารถส่งแจ้งเตือนสต็อกได้",
         });
+      }
+    } catch (err: unknown) {
+      setStatusMessage({
+        type: "error",
+        text: `เกิดข้อผิดพลาด: ${String(err)}`,
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // Send via Server Messaging API push handler
+  const handleSendServerPush = async () => {
+    if (!targetIdInput.trim()) return;
+    setIsSending(true);
+
+    try {
+      if (pushMessageType === "STOCK_ALERT") {
+        const alertPayload = allReorderNeeded.map((p) => ({
+          name: p.name,
+          stock: p.stock,
+          minStock: p.minStock,
+          unitName: getUnitName(p.unitId),
+          status: (p.stock <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK") as "OUT_OF_STOCK" | "LOW_STOCK",
+        }));
+        const flexMsg = createStockAlertFlexBubble(alertPayload, { storeName: "ร้าน MiniMark" });
+        const plainText = `⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ${allReorderNeeded.length} รายการ (ร้าน MiniMark)`;
+
+        const res = await sendLineMessagingApiFn({
+          data: {
+            toUserIdOrGroupId: targetIdInput.trim(),
+            orderSummary: plainText,
+            flexMessage: flexMsg,
+          },
+        });
+
+        if (res.success) {
+          setStatusMessage({
+            type: "success",
+            text: `ส่งแจ้งเตือนสต็อกผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput}`,
+          });
+          setPushModalOpen(false);
+        } else {
+          setStatusMessage({
+            type: "error",
+            text: res.error || "ไม่สามารถส่งผ่าน Server Messaging API ได้",
+          });
+        }
+      } else {
+        if (fullItems.length === 0) return;
+        const orderDateStr = new Date().toLocaleDateString("th-TH");
+        const flexMsg = formatDailyOrderFlexMessage(fullItems, orderDateStr);
+        const plainText = formatOrderPlainText(fullItems, orderDateStr);
+
+        const res = await sendLineMessagingApiFn({
+          data: {
+            toUserIdOrGroupId: targetIdInput.trim(),
+            orderSummary: plainText,
+            flexMessage: flexMsg,
+          },
+        });
+
+        if (res.success) {
+          handleSavePO("ORDERED");
+          setStatusMessage({
+            type: "success",
+            text: `ส่งใบสั่งซื้อผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput} และบันทึกสถานะเรียบร้อย`,
+          });
+          setPushModalOpen(false);
+        } else {
+          setStatusMessage({
+            type: "error",
+            text: res.error || "ไม่สามารถส่งผ่าน Server Messaging API ได้",
+          });
+        }
       }
     } catch (e: unknown) {
       setStatusMessage({
@@ -296,16 +622,46 @@ function ReorderPage() {
     }
   };
 
+  const getStatusBadge = (status: PurchaseOrderRecord["status"]) => {
+    switch (status) {
+      case "DRAFT":
+        return (
+          <Badge variant="secondary" className="text-[10px] font-semibold gap-1">
+            <FileText className="size-3" /> ฉบับร่าง (Draft)
+          </Badge>
+        );
+      case "ORDERED":
+        return (
+          <Badge className="bg-blue-600 text-white text-[10px] font-semibold gap-1">
+            <Send className="size-3" /> สั่งซื้อแล้ว (Ordered)
+          </Badge>
+        );
+      case "RECEIVED":
+        return (
+          <Badge className="bg-emerald-600 text-white text-[10px] font-semibold gap-1">
+            <PackageCheck className="size-3" /> รับเข้าสต็อกแล้ว
+          </Badge>
+        );
+      case "CANCELLED":
+        return (
+          <Badge variant="destructive" className="text-[10px] font-semibold gap-1">
+            <XCircle className="size-3" /> ยกเลิก (Cancelled)
+          </Badge>
+        );
+    }
+  };
+
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Top Header */}
+    <div className="space-y-4 sm:space-y-6 pb-12">
+      {/* Top Header & Fast Actions */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-            รายการที่ต้องสั่งซื้อ (Daily Reorder)
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <ClipboardList className="size-6 text-primary" /> ระบบใบสั่งซื้อสินค้า &
+            สั่งซื้อประจำวัน (Phase 6)
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            ส่งออกใบสั่งซื้อเป็น LINE Flex Message: รายการ ➔ จำนวน ➔ หน่วยนับ
+            คำนวณจำนวนสั่งซื้อ, จัดการใบสั่งซื้อ (PO Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -313,9 +669,9 @@ function ReorderPage() {
             variant="outline"
             size="sm"
             onClick={reloadData}
-            className="h-10 px-3 rounded-xl text-xs"
+            className="h-10 px-3 rounded-xl text-xs gap-1.5"
           >
-            คำนวณใหม่
+            <RefreshCw className="size-3.5" /> รีเฟรชข้อมูล
           </Button>
           <Button
             size="sm"
@@ -329,251 +685,331 @@ function ReorderPage() {
             }}
             className="h-10 px-3 rounded-xl text-xs font-semibold gap-1.5"
           >
-            <Plus className="size-4" /> เพิ่มรายการสั่ง
+            <Plus className="size-4" /> เพิ่มรายการสั่งเอง
           </Button>
         </div>
       </div>
 
-      {/* Status feedback alert */}
+      {/* Status Feedback Alert */}
       {statusMessage ? (
         <Alert
           className={
             statusMessage.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-900 dark:text-emerald-200 rounded-xl"
-              : "bg-destructive/10 border-destructive/20 text-destructive rounded-xl"
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-900 dark:text-emerald-200 rounded-2xl"
+              : statusMessage.type === "info"
+                ? "bg-blue-500/10 border-blue-500/20 text-blue-900 dark:text-blue-200 rounded-2xl"
+                : "bg-destructive/10 border-destructive/20 text-destructive rounded-2xl"
           }
         >
           {statusMessage.type === "success" ? (
-            <CheckCircle2 className="size-4 text-emerald-600" />
+            <CheckCircle2 className="size-5 text-emerald-600" />
+          ) : statusMessage.type === "info" ? (
+            <ClipboardCheck className="size-5 text-blue-600" />
           ) : (
-            <AlertCircle className="size-4" />
+            <AlertCircle className="size-5" />
           )}
           <AlertTitle className="font-semibold text-sm">
-            {statusMessage.type === "success" ? "สำเร็จ" : "ข้อผิดพลาด"}
+            {statusMessage.type === "success"
+              ? "ทำรายการสำเร็จ"
+              : statusMessage.type === "info"
+                ? "แจ้งเตือนระบบ"
+                : "ข้อผิดพลาด"}
           </AlertTitle>
           <AlertDescription className="text-xs">{statusMessage.text}</AlertDescription>
         </Alert>
       ) : null}
 
-      {/* QUICK MOBILE ACTIONS (Natural Thumb Reach) */}
-      <div className="block lg:hidden rounded-2xl border bg-card p-3.5 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xs text-muted-foreground">สรุปสั่งซื้อด่วน</div>
-            <div className="text-lg font-bold text-foreground">
-              {fullItems.length} รายการ (รวม ฿{totalCost.toLocaleString("th-TH")})
-            </div>
+      {/* KPI Reorder Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="rounded-2xl border bg-card p-3 sm:p-4 text-center shadow-sm">
+          <div className="text-[11px] sm:text-xs text-muted-foreground font-medium">
+            ใบสั่งซื้อทั้งหมด (PO)
           </div>
-          <Badge variant="outline" className="font-mono text-xs">
-            {totalQuantity} หน่วย
-          </Badge>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-primary mt-0.5">
+            {purchaseOrders.length} ฉบับ
+          </div>
         </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            size="lg"
-            disabled={fullItems.length === 0 || isSending}
-            className="h-12 w-full gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white font-semibold text-xs rounded-xl shadow-sm active:scale-95"
-            onClick={() => handleSendToLine("group")}
-          >
-            <Users className="size-4 shrink-0" />
-            <span className="truncate">ส่ง LINE กลุ่ม</span>
-          </Button>
-
-          <Button
-            size="lg"
-            variant="outline"
-            disabled={fullItems.length === 0 || isSending}
-            className="h-12 w-full gap-1.5 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 font-semibold text-xs rounded-xl active:scale-95"
-            onClick={() => handleSendToLine("personal")}
-          >
-            <Share2 className="size-4 shrink-0" />
-            <span className="truncate">ส่ง LINE ส่วนตัว</span>
-          </Button>
+        <div className="rounded-2xl border bg-card p-3 sm:p-4 text-center shadow-sm">
+          <div className="text-[11px] sm:text-xs text-blue-600 font-semibold flex items-center justify-center gap-1">
+            <Send className="size-3.5" /> สั่งซื้อแล้ว / รอรับ
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-blue-600 mt-0.5">
+            {purchaseOrders.filter((p) => p.status === "ORDERED").length} ฉบับ
+          </div>
+        </div>
+        <div className="rounded-2xl border bg-card p-3 sm:p-4 text-center shadow-sm">
+          <div className="text-[11px] sm:text-xs text-emerald-600 font-semibold flex items-center justify-center gap-1">
+            <PackageCheck className="size-3.5" /> รับเข้าสต็อกแล้ว
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-600 mt-0.5">
+            {purchaseOrders.filter((p) => p.status === "RECEIVED").length} ฉบับ
+          </div>
+        </div>
+        <div className="rounded-2xl border bg-card p-3 sm:p-4 text-center shadow-sm">
+          <div className="text-[11px] sm:text-xs text-destructive font-semibold flex items-center justify-center gap-1">
+            <CircleSlash className="size-3.5" /> สินค้าหมดสต็อก (0)
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-destructive mt-0.5">
+            {outOfStockItems.length} รายการ
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
-        {/* REORDER ITEMS LIST */}
-        <div className="lg:col-span-7 space-y-3">
-          {/* MOBILE LIST ITEMS (Cards with Touch Counters) */}
-          <div className="block md:hidden space-y-2.5">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-semibold text-muted-foreground">
-                รายการสินค้าที่ต้องสั่ง ({fullItems.length})
-              </span>
-              <span className="text-xs text-muted-foreground">ปรับจำนวนด้วยปุ่ม + / -</span>
-            </div>
+      {/* Main Tabs: 1. Calculator | 2. Alerts Hub | 3. Create PO | 4. PO History (Phase 6) */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(val) => setActiveTab(val as typeof activeTab)}
+        className="space-y-4"
+      >
+        <TabsList className="grid grid-cols-2 sm:grid-cols-4 max-w-3xl h-auto p-1.5 rounded-2xl bg-muted gap-1">
+          <TabsTrigger
+            value="po_history"
+            className="h-10 text-xs sm:text-sm font-semibold rounded-xl gap-1.5"
+          >
+            <ClipboardCheck className="size-4 text-primary" /> ประวัติใบสั่งซื้อ (
+            {purchaseOrders.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="create_po"
+            className="h-10 text-xs sm:text-sm font-semibold rounded-xl gap-1.5"
+          >
+            <ClipboardList className="size-4 text-emerald-600" /> จัดทำใบสั่งซื้อ (
+            {fullItems.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="calculator"
+            className="h-10 text-xs sm:text-sm font-semibold rounded-xl gap-1.5"
+          >
+            <Calculator className="size-4 text-primary" /> คำนวณสั่งซื้อ ({forecastList.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="alerts_hub"
+            className="h-10 text-xs sm:text-sm font-semibold rounded-xl gap-1.5"
+          >
+            <AlertTriangle className="size-4 text-amber-500" /> แจ้งเตือนสต็อก (
+            {allReorderNeeded.length})
+          </TabsTrigger>
+        </TabsList>
 
-            {fullItems.length === 0 ? (
-              <Card className="rounded-2xl p-8 text-center text-muted-foreground">
-                <Package className="size-10 mx-auto mb-2 opacity-40" />
-                <p className="text-sm font-medium">ไม่มีรายการสินค้าที่ต้องสั่งซื้อ</p>
-                <p className="text-xs mt-1">สต็อกสินค้าทุกรายการยังอยู่ในเกณฑ์ปกติ</p>
-              </Card>
-            ) : (
-              fullItems.map((item, idx) => (
-                <div
-                  key={item.product.id}
-                  className="rounded-2xl border bg-card p-3 shadow-sm space-y-2"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-foreground line-clamp-2">
-                        {idx + 1}. {item.product.name}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                        <FormatBadge type={item.product.codeType} format={item.product.format} />
-                        <span className="font-mono text-[11px] truncate">
-                          {item.product.barcode}
-                        </span>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 rounded-lg text-muted-foreground hover:text-destructive shrink-0 active:scale-90"
-                      onClick={() => handleRemoveOrder(item.product.id)}
-                      aria-label="ลบรายการสั่ง"
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-
-                  {/* Stock vs Quantity Stepper */}
-                  <div className="flex items-center justify-between border-t border-border/60 pt-2">
-                    <div className="text-xs">
-                      <span className="text-muted-foreground">คงเหลือ: </span>
-                      <span className="font-mono font-bold text-destructive">
-                        {item.product.stock}
-                      </span>
-                      <span className="text-muted-foreground text-[11px] ml-1">
-                        (เตือนที่ {item.product.minStock})
-                      </span>
-                    </div>
-
-                    {/* Touch Stepper (44px hitboxes) */}
-                    <div className="flex items-center gap-1 bg-muted/60 rounded-xl p-0.5 border">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-9 rounded-lg font-bold text-base hover:bg-background active:scale-90"
-                        onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                      >
-                        -
-                      </Button>
-                      <span className="font-mono font-bold text-sm min-w-8 text-center text-primary px-1">
-                        {item.quantity}
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-9 rounded-lg font-bold text-base hover:bg-background active:scale-90"
-                        onClick={() => handleUpdateQuantity(item.product.id, 1)}
-                      >
-                        +
-                      </Button>
-                      <span className="text-xs text-muted-foreground pr-2 font-medium">
-                        {item.unitName}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* DESKTOP TABLE */}
-          <Card className="hidden md:block rounded-2xl">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
+        {/* TAB 1: PURCHASE ORDER MANAGEMENT & LIFECYCLE (PHASE 6 CORE) */}
+        <TabsContent value="po_history" className="space-y-4">
+          <Card className="rounded-2xl border-border/80 shadow-sm">
+            <CardHeader className="p-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <ClipboardList className="size-5 text-primary" /> รายการสินค้าที่ต้องสั่งซื้อ
+                  <ClipboardCheck className="size-5 text-primary" /> รายการใบสั่งซื้อสินค้าทั้งหมด
+                  (PO Lifecycle)
                 </CardTitle>
-                <CardDescription>
-                  ดึงจากสินค้าที่มีสต็อกน้อยกว่าหรือเท่ากับจุดเตือนขั้นต่ำ
+                <CardDescription className="text-xs">
+                  จัดการวงจรชีวิตใบสั่งซื้อ (Draft ➔ Ordered ➔ Received ➔ Cancelled)
+                  พร้อมตรวจรับเข้าสต็อก
                 </CardDescription>
               </div>
-              <Badge variant="outline" className="font-mono">
-                {totalQuantity} หน่วยรวม
-              </Badge>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="h-9 text-xs rounded-xl font-semibold gap-1.5 shadow-sm"
+                  onClick={() => setActiveTab("create_po")}
+                >
+                  <Plus className="size-4" /> สร้างใบสั่งซื้อใหม่
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent>
-              <div className="rounded-xl border overflow-x-auto">
+
+            <CardContent className="p-4 space-y-3">
+              {/* Status Filter Buttons */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <Button
+                  size="sm"
+                  variant={poStatusFilter === "ALL" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl"
+                  onClick={() => setPoStatusFilter("ALL")}
+                >
+                  ทั้งหมด ({purchaseOrders.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poStatusFilter === "ORDERED" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl text-blue-600"
+                  onClick={() => setPoStatusFilter("ORDERED")}
+                >
+                  สั่งซื้อแล้ว ({purchaseOrders.filter((p) => p.status === "ORDERED").length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poStatusFilter === "RECEIVED" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl text-emerald-600"
+                  onClick={() => setPoStatusFilter("RECEIVED")}
+                >
+                  รับเข้าสต็อกแล้ว ({purchaseOrders.filter((p) => p.status === "RECEIVED").length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poStatusFilter === "DRAFT" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl"
+                  onClick={() => setPoStatusFilter("DRAFT")}
+                >
+                  ฉบับร่าง ({purchaseOrders.filter((p) => p.status === "DRAFT").length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poStatusFilter === "CANCELLED" ? "destructive" : "outline"}
+                  className="h-8 text-xs rounded-xl text-destructive"
+                  onClick={() => setPoStatusFilter("CANCELLED")}
+                >
+                  ยกเลิก ({purchaseOrders.filter((p) => p.status === "CANCELLED").length})
+                </Button>
+              </div>
+
+              {/* Mobile PO Cards */}
+              <div className="block md:hidden space-y-2.5">
+                {filteredPOs.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FileText className="size-8 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-semibold">ไม่พบข้อมูลใบสั่งซื้อตามสถานะ</p>
+                  </div>
+                ) : (
+                  filteredPOs.map((po) => (
+                    <div
+                      key={po.id}
+                      className="rounded-2xl border bg-card p-3.5 shadow-sm space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-sm text-primary">
+                          {po.orderNumber}
+                        </span>
+                        {getStatusBadge(po.status)}
+                      </div>
+
+                      <div className="text-xs text-muted-foreground space-y-0.5">
+                        <div>
+                          ซัพพลายเออร์:{" "}
+                          <span className="text-foreground font-medium">
+                            {po.supplierName || "ร้านค้า/ซัพพลายเออร์ทั่วไป"}
+                          </span>
+                        </div>
+                        <div>วันที่สร้าง: {po.createdAt}</div>
+                        {po.sentViaLineAt && <div>ส่ง LINE: {po.sentViaLineAt}</div>}
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-border/60 pt-2 text-xs">
+                        <div>
+                          <span className="text-muted-foreground">
+                            {po.items.length} รายการ ({po.totalQuantity} ชิ้น) ➔{" "}
+                          </span>
+                          <span className="font-mono font-bold text-emerald-600">
+                            ฿{po.totalCost.toLocaleString("th-TH")}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs px-2 gap-1 rounded-lg"
+                            onClick={() => handleOpenPODetail(po)}
+                          >
+                            <Eye className="size-3" /> ดู / พิมพ์ A4
+                          </Button>
+                          {po.status === "ORDERED" && (
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                              onClick={() => handleReceivePO(po)}
+                            >
+                              รับเข้าสต็อก
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Desktop PO Table */}
+              <div className="hidden md:block rounded-xl border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-10">#</TableHead>
-                      <TableHead>รายการสินค้า</TableHead>
-                      <TableHead className="w-20 text-center">คงเหลือ</TableHead>
-                      <TableHead className="w-36 text-center">จำนวนสั่งซื้อ</TableHead>
-                      <TableHead className="w-16 text-right">ลบ</TableHead>
+                      <TableHead className="w-40">เลขที่ใบสั่งซื้อ</TableHead>
+                      <TableHead className="w-36">วันที่สร้าง</TableHead>
+                      <TableHead>ซัพพลายเออร์ / ร้านค้า</TableHead>
+                      <TableHead className="text-center w-28">จำนวนรายการ</TableHead>
+                      <TableHead className="text-right w-32">ยอดเงินรวม (ทุน)</TableHead>
+                      <TableHead className="text-center w-36">สถานะ</TableHead>
+                      <TableHead className="text-right w-52">การดำเนินการ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {fullItems.length === 0 ? (
+                    {filteredPOs.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                          ไม่มีรายการสินค้าที่ต้องสั่งซื้อ หรือลบออกหมดแล้ว
+                        <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                          ไม่มีข้อมูลใบสั่งซื้อในระบบ
                         </TableCell>
                       </TableRow>
                     ) : (
-                      fullItems.map((item, idx) => (
-                        <TableRow key={item.product.id}>
-                          <TableCell className="font-mono text-xs text-muted-foreground">
-                            {idx + 1}
+                      filteredPOs.map((po) => (
+                        <TableRow key={po.id}>
+                          <TableCell className="font-mono font-bold text-primary">
+                            {po.orderNumber}
                           </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-foreground">{item.product.name}</div>
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <FormatBadge
-                                type={item.product.codeType}
-                                format={item.product.format}
-                                className="scale-90 origin-left"
-                              />
-                              <span className="font-mono">{item.product.barcode}</span>
-                            </div>
+                          <TableCell className="text-xs text-muted-foreground font-mono">
+                            {po.createdAt}
                           </TableCell>
-                          <TableCell className="text-center">
-                            <span className="font-mono text-xs text-destructive font-semibold">
-                              {item.product.stock}
-                            </span>
+                          <TableCell className="text-sm font-medium text-foreground">
+                            {po.supplierName || "ซัพพลายเออร์ทั่วไป"}
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-1">
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="size-7 rounded-lg"
-                                onClick={() => handleUpdateQuantity(item.product.id, -1)}
-                              >
-                                -
-                              </Button>
-                              <span className="font-mono font-bold text-sm w-9 text-center text-primary">
-                                {item.quantity}
-                              </span>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                                className="size-7 rounded-lg"
-                                onClick={() => handleUpdateQuantity(item.product.id, 1)}
-                              >
-                                +
-                              </Button>
-                              <span className="text-xs text-muted-foreground ml-1">
-                                {item.unitName}
-                              </span>
-                            </div>
+                          <TableCell className="text-center font-mono text-xs">
+                            {po.items.length} รายการ ({po.totalQuantity} ชิ้น)
                           </TableCell>
+                          <TableCell className="text-right font-mono font-bold text-emerald-600">
+                            ฿{po.totalCost.toLocaleString("th-TH")}
+                          </TableCell>
+                          <TableCell className="text-center">{getStatusBadge(po.status)}</TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8 rounded-lg text-muted-foreground hover:text-destructive"
-                              onClick={() => handleRemoveOrder(item.product.id)}
-                            >
-                              <Trash2 className="size-4" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs gap-1 rounded-lg"
+                                onClick={() => handleOpenPODetail(po)}
+                              >
+                                <Eye className="size-3.5" /> รายละเอียด / พิมพ์
+                              </Button>
+                              {po.status === "ORDERED" && (
+                                <Button
+                                  size="sm"
+                                  className="h-8 text-xs rounded-lg font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                                  onClick={() => handleReceivePO(po)}
+                                >
+                                  <PackageCheck className="size-3.5" /> รับเข้าสต็อก
+                                </Button>
+                              )}
+                              {po.status === "DRAFT" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8 text-destructive"
+                                  onClick={() => handleDeletePO(po)}
+                                  title="ลบฉบับร่าง"
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              )}
+                              {po.status === "ORDERED" && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleCancelPO(po)}
+                                  title="ยกเลิกใบสั่ง"
+                                >
+                                  <XCircle className="size-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -581,140 +1017,842 @@ function ReorderPage() {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-              {/* Cost Summary Box */}
-              <div className="mt-4 flex items-center justify-between rounded-xl bg-muted/60 p-3 text-sm">
-                <span className="text-muted-foreground">ประมาณการราคาทุนรวม:</span>
-                <span className="font-bold text-base text-foreground">
-                  ฿{totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                </span>
+        {/* TAB 2: CREATE PURCHASE ORDER & LINE FLEX (PHASE 6) */}
+        <TabsContent value="create_po" className="space-y-4">
+          <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
+            {/* REORDER ITEMS LIST */}
+            <div className="lg:col-span-7 space-y-3">
+              <Card className="rounded-2xl p-4 space-y-3 border-border/80">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">
+                    ชื่อซัพพลายเออร์ / ร้านค้าผู้จัดจำหน่าย
+                  </Label>
+                  <Input
+                    placeholder="เช่น บริษัท ยูนิลีเวอร์, แม็คโคร, ร้านขายส่ง ก."
+                    className="h-10 rounded-xl text-sm"
+                    value={supplierNameInput}
+                    onChange={(e) => setSupplierNameInput(e.target.value)}
+                  />
+                </div>
+              </Card>
+
+              {/* MOBILE LIST ITEMS */}
+              <div className="block md:hidden space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    รายการสินค้าที่ต้องสั่ง ({fullItems.length})
+                  </span>
+                  <span className="text-xs text-muted-foreground">ปรับจำนวนด้วยปุ่ม + / -</span>
+                </div>
+
+                {fullItems.length === 0 ? (
+                  <Card className="rounded-2xl p-8 text-center text-muted-foreground">
+                    <Package className="size-10 mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-medium">ไม่มีรายการสินค้าในใบสั่งซื้อ</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 rounded-xl text-xs"
+                      onClick={() => setActiveTab("calculator")}
+                    >
+                      เลือกจากระบบคำนวณจำนวนสั่งซื้อ
+                    </Button>
+                  </Card>
+                ) : (
+                  fullItems.map((item, idx) => (
+                    <div
+                      key={item.product.id}
+                      className="rounded-2xl border bg-card p-3 shadow-sm space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-foreground line-clamp-2">
+                            {idx + 1}. {item.product.name}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+                            <FormatBadge
+                              type={item.product.codeType}
+                              format={item.product.format}
+                            />
+                            <span className="font-mono text-[11px] truncate">
+                              {item.product.barcode}
+                            </span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 rounded-lg text-muted-foreground hover:text-destructive shrink-0 active:scale-90"
+                          onClick={() => handleRemoveOrder(item.product.id)}
+                          aria-label="ลบรายการสั่ง"
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-border/60 pt-2">
+                        <div className="text-xs">
+                          <span className="text-muted-foreground">คงเหลือ: </span>
+                          <span className="font-mono font-bold text-destructive">
+                            {item.product.stock}
+                          </span>
+                          <span className="text-muted-foreground text-[11px] ml-1">
+                            (เตือนที่ {item.product.minStock})
+                          </span>
+                        </div>
+
+                        {/* Stepper */}
+                        <div className="flex items-center gap-1 bg-muted/60 rounded-xl p-0.5 border">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-9 rounded-lg font-bold text-base hover:bg-background active:scale-90"
+                            onClick={() => handleUpdateQuantity(item.product.id, -1)}
+                          >
+                            -
+                          </Button>
+                          <span className="font-mono font-bold text-sm min-w-8 text-center text-primary px-1">
+                            {item.quantity}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-9 rounded-lg font-bold text-base hover:bg-background active:scale-90"
+                            onClick={() => handleUpdateQuantity(item.product.id, 1)}
+                          >
+                            +
+                          </Button>
+                          <span className="text-xs text-muted-foreground pr-2 font-medium">
+                            {item.unitName}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* DESKTOP TABLE */}
+              <Card className="hidden md:block rounded-2xl">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ClipboardList className="size-5 text-primary" /> รายการสินค้าในใบสั่งซื้อ
+                    </CardTitle>
+                    <CardDescription>
+                      ระบุ รายการ ➔ จำนวน ➔ หน่วยนับ สำหรับส่ง Flex Message และบันทึก PO
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className="font-mono">
+                    {totalQuantity} หน่วยรวม
+                  </Badge>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-xl border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12 text-center">#</TableHead>
+                          <TableHead>ชื่อสินค้า</TableHead>
+                          <TableHead className="w-24 text-right">คงเหลือ</TableHead>
+                          <TableHead className="w-44 text-center">จำนวนสั่งซื้อ</TableHead>
+                          <TableHead className="w-28 text-right">ราคาทุน</TableHead>
+                          <TableHead className="w-16 text-center">ลบ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {fullItems.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="text-center py-10 text-muted-foreground"
+                            >
+                              ไม่มีรายการสินค้าในใบสั่งซื้อ
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          fullItems.map((item, idx) => (
+                            <TableRow key={item.product.id}>
+                              <TableCell className="text-center font-mono text-xs text-muted-foreground">
+                                {idx + 1}
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-medium text-foreground">
+                                  {item.product.name}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground font-mono">
+                                  {item.product.barcode}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm text-destructive font-bold">
+                                {item.product.stock}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-7 rounded-lg"
+                                    onClick={() => handleUpdateQuantity(item.product.id, -1)}
+                                  >
+                                    -
+                                  </Button>
+                                  <span className="font-mono font-bold text-sm min-w-8 text-center text-primary">
+                                    {item.quantity}
+                                  </span>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-7 rounded-lg"
+                                    onClick={() => handleUpdateQuantity(item.product.id, 1)}
+                                  >
+                                    +
+                                  </Button>
+                                  <span className="text-xs text-muted-foreground ml-1">
+                                    {item.unitName}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                ฿{item.priceEstimate.toLocaleString("th-TH")}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleRemoveOrder(item.product.id)}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* LINE FLEX PREVIEW & ACTION PANEL */}
+            <div className="lg:col-span-5 space-y-4">
+              <Card className="rounded-2xl border-emerald-500/30 overflow-hidden shadow-sm">
+                <CardHeader className="bg-emerald-600 text-white p-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2 text-white">
+                      <MessageCircle className="size-5" /> ตัวอย่าง Flex Message
+                    </CardTitle>
+                    <Badge className="bg-emerald-700 text-white text-xs border-0">
+                      LINE Preview
+                    </Badge>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="p-4 space-y-4">
+                  {/* Mock LINE Chat Bubble */}
+                  <div className="rounded-2xl border bg-card p-4 space-y-3 shadow-inner">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <div className="font-bold text-sm text-foreground">
+                        📦 ใบสั่งซื้อสินค้าประจำวัน
+                      </div>
+                      <span className="text-[11px] text-muted-foreground">ร้าน MiniMark</span>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      {fullItems.length === 0 ? (
+                        <p className="text-muted-foreground italic py-3 text-center">
+                          (ยังไม่มีรายการสินค้าในใบสั่ง)
+                        </p>
+                      ) : (
+                        fullItems.map((item, idx) => (
+                          <div
+                            key={item.product.id}
+                            className="flex justify-between py-1 border-b border-border/40"
+                          >
+                            <span className="text-foreground truncate max-w-[180px]">
+                              {idx + 1}. {item.product.name}
+                            </span>
+                            <span className="font-bold font-mono text-emerald-700 dark:text-emerald-300 shrink-0">
+                              {item.quantity} {item.unitName}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2 border-t font-semibold text-xs text-foreground">
+                      <span>รวมทั้งสิ้น:</span>
+                      <span className="font-bold text-sm text-emerald-700 dark:text-emerald-300">
+                        {fullItems.length} รายการ (฿{totalCost.toLocaleString("th-TH")})
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* PO Save & Send Action Buttons */}
+                  <div className="space-y-2 pt-1">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        size="lg"
+                        disabled={fullItems.length === 0 || isSending}
+                        className="h-11 w-full gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white font-semibold text-xs rounded-xl shadow-sm active:scale-95"
+                        onClick={() => handleSendOrderToLine("group")}
+                      >
+                        <Users className="size-4 shrink-0" />
+                        <span className="truncate">ส่ง LINE กลุ่ม</span>
+                      </Button>
+
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        disabled={fullItems.length === 0 || isSending}
+                        className="h-11 w-full gap-1.5 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 font-semibold text-xs rounded-xl active:scale-95"
+                        onClick={() => handleSendOrderToLine("personal")}
+                      >
+                        <Share2 className="size-4 shrink-0" />
+                        <span className="truncate">ส่ง LINE ส่วนตัว</span>
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        variant="secondary"
+                        disabled={fullItems.length === 0}
+                        className="h-10 text-xs font-semibold rounded-xl gap-1.5"
+                        onClick={() => handleSavePO("DRAFT")}
+                      >
+                        <Save className="size-4" /> บันทึกฉบับร่าง (Draft)
+                      </Button>
+
+                      <Button
+                        variant="default"
+                        disabled={fullItems.length === 0}
+                        className="h-10 text-xs font-semibold rounded-xl gap-1.5"
+                        onClick={() => handleSavePO("ORDERED")}
+                      >
+                        <FileCheck2 className="size-4" /> บันทึกสั่งซื้อ (Ordered)
+                      </Button>
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      disabled={fullItems.length === 0 || isSending}
+                      className="h-10 w-full text-xs font-semibold rounded-xl gap-2 active:scale-95"
+                      onClick={() => {
+                        setPushMessageType("PURCHASE_ORDER");
+                        setPushModalOpen(true);
+                      }}
+                    >
+                      <Send className="size-4 text-primary" />
+                      ส่งผ่าน Messaging API (ระบุ User ID / Group ID)
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* TAB 3: SMART REORDER CALCULATOR (PHASE 5) */}
+        <TabsContent value="calculator" className="space-y-4">
+          <Card className="rounded-2xl border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background p-4 sm:p-5 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-5 text-primary" />
+                  <h3 className="font-bold text-base text-foreground">
+                    กลยุทธ์การคำนวณจำนวนสั่งซื้อ (Smart Forecasting Strategy)
+                  </h3>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  เลือกสูตรการคำนวณจำนวนที่ควรสั่งซื้ออัตโนมัติ
+                  เพื่อป้องกันสินค้าขาดสต็อกและควบคุมต้นทุน
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                    สูตรคำนวณ:
+                  </Label>
+                  <Select
+                    value={calculationStrategy}
+                    onValueChange={(val) => setCalculationStrategy(val as ReorderStrategy)}
+                  >
+                    <SelectTrigger className="h-10 w-[210px] rounded-xl font-medium text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TARGET_PAR">
+                        เติมเต็ม Par Level (เป้าหมาย - คงเหลือ)
+                      </SelectItem>
+                      <SelectItem value="MINIMUM_RESTORE">
+                        ฟื้นฟูขั้นต่ำ (+20% Safety Buffer)
+                      </SelectItem>
+                      <SelectItem value="WEEKEND_BUFFER">
+                        สต็อกสุดสัปดาห์ (1.5x Multiplier)
+                      </SelectItem>
+                      <SelectItem value="DOUBLE_BUFFER">เทศกาล/วันหยุดยาว (2.0x Double)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  className="h-10 rounded-xl text-xs font-semibold gap-1.5 shadow-sm active:scale-95 bg-primary text-primary-foreground"
+                  onClick={handleApplyForecastToCart}
+                  disabled={forecastList.length === 0}
+                >
+                  <ArrowRight className="size-4" /> ใช้ยอดคำนวณทั้งหมดในใบสั่ง (
+                  {forecastList.length})
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* Calculator Items Table */}
+          <Card className="rounded-2xl border-border/80 shadow-sm">
+            <CardHeader className="p-4 pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Calculator className="size-5 text-primary" />{" "}
+                    ผลลัพธ์การคำนวณจำนวนที่ควรสั่งซื้อ
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    เปรียบเทียบ สต็อกปัจจุบัน ➔ เป้าหมาย ➔ จำนวนที่ระบบแนะนำให้สั่งซื้อ
+                  </CardDescription>
+                </div>
+                <div className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                  ประมาณการงบรวม: ฿{forecastTotalEstimatedCost.toLocaleString("th-TH")}
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-3">
+              {/* Desktop Table */}
+              <div className="rounded-xl border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-36">บาร์โค้ด</TableHead>
+                      <TableHead>ชื่อสินค้า</TableHead>
+                      <TableHead className="text-right w-24">คงเหลือ</TableHead>
+                      <TableHead className="text-right w-24">จุดเตือน</TableHead>
+                      <TableHead className="text-right w-28">เป้าหมาย (Par)</TableHead>
+                      <TableHead className="text-right w-36">จำนวนแนะนำสั่งซื้อ</TableHead>
+                      <TableHead className="text-right w-32">งบทุนรวม</TableHead>
+                      <TableHead className="text-center w-28">ความเร่งด่วน</TableHead>
+                      <TableHead className="text-right w-36">การดำเนินการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {forecastList.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
+                          ไม่มีสินค้าที่ต้องคำนวณสั่งซื้อ
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      forecastList.map((item) => {
+                        const isAdded = orderList.some((o) => o.productId === item.product.id);
+                        return (
+                          <TableRow key={item.product.id}>
+                            <TableCell className="font-mono text-xs font-semibold">
+                              {item.product.barcode}
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium text-foreground">{item.product.name}</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {getCatName(item.product.categoryId)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold">
+                              <span
+                                className={
+                                  item.isOutOfStock ? "text-destructive" : "text-amber-600"
+                                }
+                              >
+                                {item.currentStock} {getUnitName(item.product.unitId)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs text-muted-foreground">
+                              {item.minStock} {getUnitName(item.product.unitId)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs font-semibold">
+                              {item.targetStock} {getUnitName(item.product.unitId)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold text-primary text-sm">
+                              +{item.suggestedQuantity} {getUnitName(item.product.unitId)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs font-semibold text-foreground">
+                              ฿{item.estimatedCost.toLocaleString("th-TH")}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {item.isOutOfStock ? (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  วิกฤต (หมด 0)
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px]">
+                                  ปานกลาง
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant={isAdded ? "secondary" : "default"}
+                                className="h-8 text-xs rounded-lg font-semibold"
+                                onClick={() => handleApplySingleForecast(item)}
+                              >
+                                {isAdded ? "อยู่ในใบสั่งแล้ว" : `+ สั่ง ${item.suggestedQuantity}`}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
-        </div>
+        </TabsContent>
 
-        {/* LINE FLEX PREVIEW & ACTION BUTTONS */}
-        <div className="lg:col-span-5 space-y-4">
-          <Card className="rounded-2xl border-emerald-500/30 overflow-hidden shadow-sm">
-            <CardHeader className="bg-emerald-600 text-white p-3.5 sm:p-4">
-              <CardTitle className="text-sm sm:text-base flex items-center gap-2 text-white font-semibold">
-                <MessageCircle className="size-5" /> ตัวอย่าง LINE Flex Message
-              </CardTitle>
-              <CardDescription className="text-emerald-100 text-xs">
-                ส่งในรูปแบบ: รายการ ➔ จำนวน ➔ หน่วยนับ
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-3.5 sm:p-4 space-y-3.5">
-              {/* Mock LINE Flex Card */}
-              <div className="rounded-xl border bg-card p-3.5 shadow-sm space-y-2.5">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <span className="font-bold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
-                    📦 ใบสั่งซื้อสินค้าประจำวัน
-                  </span>
-                  <span className="text-[11px] text-muted-foreground font-mono">
-                    {new Date().toLocaleDateString("th-TH")}
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                  {fullItems.length === 0 ? (
-                    <div className="text-xs text-muted-foreground py-4 text-center">
-                      ไม่มีรายการที่ต้องสั่งซื้อ
-                    </div>
-                  ) : (
-                    fullItems.map((item, idx) => (
-                      <div
-                        key={item.product.id}
-                        className="flex items-center justify-between text-xs py-1 border-b border-dashed border-border/60"
-                      >
-                        <span className="font-medium text-foreground truncate max-w-[170px]">
-                          {idx + 1}. {item.name}
-                        </span>
-                        <span className="font-bold font-mono text-emerald-600 shrink-0">
-                          {item.quantity} {item.unitName}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="border-t pt-2 text-xs space-y-1">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>จำนวนรายการ</span>
-                    <span className="font-bold font-mono">{fullItems.length} รายการ</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>ยอดเงินโดยประมาณ</span>
-                    <span className="font-bold text-emerald-600 font-mono">
-                      ฿{totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
+        {/* TAB 4: STOCK ALERTS HUB (PHASE 4) */}
+        <TabsContent value="alerts_hub" className="space-y-4">
+          <Card className="rounded-2xl border-border/80 shadow-sm">
+            <CardHeader className="p-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Bell className="size-5 text-amber-500" /> รายการสินค้าที่ถึงจุดเตือนต้องสั่งซื้อ
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  สินค้าที่มีสต็อกคงเหลือ ≤ จุดเตือนขั้นต่ำของแต่ละรายการ
+                </CardDescription>
               </div>
 
-              {/* ACTION BUTTONS (GROUP vs PERSONAL) */}
-              <div className="space-y-2 pt-1">
-                <Button
-                  size="lg"
-                  disabled={fullItems.length === 0 || isSending}
-                  className="h-12 w-full gap-2 bg-[#06C755] hover:bg-[#05b34c] text-white font-semibold rounded-xl active:scale-95 shadow-sm"
-                  onClick={() => handleSendToLine("group")}
-                >
-                  <Users className="size-5" /> 👥 ส่งเข้า LINE กลุ่ม (Group Chat)
-                </Button>
-
-                <Button
-                  size="lg"
-                  variant="outline"
-                  disabled={fullItems.length === 0 || isSending}
-                  className="h-12 w-full gap-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 rounded-xl font-semibold active:scale-95"
-                  onClick={() => handleSendToLine("personal")}
-                >
-                  <Share2 className="size-4" /> 👤 ส่งเข้า LINE ส่วนตัว (Personal Chat)
-                </Button>
-
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   size="sm"
-                  variant="ghost"
-                  disabled={fullItems.length === 0 || isSending}
-                  className="w-full gap-1.5 text-xs text-muted-foreground h-9"
-                  onClick={() => setPushModalOpen(true)}
+                  variant="outline"
+                  className="h-9 text-xs rounded-xl gap-1.5"
+                  onClick={handleApplyForecastToCart}
+                  disabled={allReorderNeeded.length === 0}
                 >
-                  <Send className="size-3.5" /> ส่งผ่าน Server Messaging API (Push)
+                  <Plus className="size-3.5" /> เพิ่มทั้งหมดเข้าใบสั่งซื้อ
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-9 text-xs font-semibold rounded-xl gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white"
+                  onClick={() => handleSendStockAlertToLine("group")}
+                  disabled={allReorderNeeded.length === 0 || isSending}
+                >
+                  <Users className="size-3.5" /> ส่งแจ้งเตือนเข้า LINE
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-9 text-xs rounded-xl gap-1"
+                  onClick={() => {
+                    setPushMessageType("STOCK_ALERT");
+                    setPushModalOpen(true);
+                  }}
+                >
+                  <Send className="size-3.5" /> ส่งตรง User ID
+                </Button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <Button
+                  size="sm"
+                  variant={alertFilter === "ALL_ALERT" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl"
+                  onClick={() => setAlertFilter("ALL_ALERT")}
+                >
+                  ทั้งหมด ({allReorderNeeded.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={alertFilter === "OUT_OF_STOCK" ? "destructive" : "outline"}
+                  className="h-8 text-xs rounded-xl text-destructive"
+                  onClick={() => setAlertFilter("OUT_OF_STOCK")}
+                >
+                  สินค้าหมด (0) ({outOfStockItems.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={alertFilter === "LOW_STOCK" ? "secondary" : "outline"}
+                  className="h-8 text-xs rounded-xl text-amber-700 dark:text-amber-300"
+                  onClick={() => setAlertFilter("LOW_STOCK")}
+                >
+                  สินค้าใกล้หมด ({lowStockItems.length})
                 </Button>
               </div>
 
-              {/* Environment Diagnostics Footer */}
-              <div className="text-[11px] text-muted-foreground rounded-xl bg-muted/60 p-2.5 space-y-1">
-                <div className="flex justify-between">
-                  <span>Client LIFF:</span>
-                  <span className="font-mono font-medium">
-                    {lineStatus?.hasLiffId ? "เชื่อมต่อแล้ว" : "ใช้ Web Share (Auto Fallback)"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Server Token:</span>
-                  <span className="font-mono font-medium">
-                    {serverConfig?.hasAccessToken ? "พร้อมใช้งาน" : "ยังไม่ได้ระบุ"}
-                  </span>
-                </div>
+              {/* Desktop Alerts Table */}
+              <div className="rounded-xl border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-36">บาร์โค้ด</TableHead>
+                      <TableHead>ชื่อสินค้า</TableHead>
+                      <TableHead>หมวดหมู่</TableHead>
+                      <TableHead className="text-right">คงเหลือ</TableHead>
+                      <TableHead className="text-right">จุดเตือนขั้นต่ำ</TableHead>
+                      <TableHead className="text-right">เป้าหมายสต็อก</TableHead>
+                      <TableHead className="text-center w-28">สถานะ</TableHead>
+                      <TableHead className="text-right w-36">การดำเนินการ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displayedAlertItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                          ไม่มีสินค้าที่ถึงจุดเตือนตามเงื่อนไข
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      displayedAlertItems.map((p) => {
+                        const isOut = p.stock <= 0;
+                        const needed = MasterStore.calculateSuggestedQuantity(
+                          p,
+                          calculationStrategy,
+                          customMultiplier,
+                        );
+                        const isAdded = orderList.some((item) => item.productId === p.id);
+
+                        return (
+                          <TableRow key={p.id}>
+                            <TableCell className="font-mono text-xs font-semibold">
+                              {p.barcode}
+                            </TableCell>
+                            <TableCell className="font-medium text-foreground">{p.name}</TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {getCatName(p.categoryId)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold">
+                              <span className={isOut ? "text-destructive" : "text-amber-600"}>
+                                {p.stock} {getUnitName(p.unitId)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                              {p.minStock} {getUnitName(p.unitId)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                              {p.targetStock || p.reorderQuantity} {getUnitName(p.unitId)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {isOut ? (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  หมดสต็อก (0)
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px]">
+                                  ใกล้หมด
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant={isAdded ? "secondary" : "default"}
+                                className="h-8 text-xs rounded-lg font-semibold"
+                                onClick={() => {
+                                  if (!isAdded) {
+                                    setOrderList((prev) => [
+                                      ...prev,
+                                      { productId: p.id, quantity: needed, unitId: p.unitId },
+                                    ]);
+                                  }
+                                }}
+                              >
+                                {isAdded
+                                  ? "สั่งซื้อแล้ว"
+                                  : `+ สั่ง ${needed} ${getUnitName(p.unitId)}`}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
+      </Tabs>
 
-      {/* ADD ITEM TO REORDER MODAL */}
+      {/* PO DETAIL & PRINT A4 DOCUMENT DIALOG (PHASE 6) */}
+      <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
+        <DialogContent className="w-[96vw] max-w-3xl rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+                <FileText className="size-5 text-primary" />
+                ใบสั่งซื้อสินค้า (Purchase Order) — {selectedPO?.orderNumber}
+              </DialogTitle>
+              <div>{selectedPO && getStatusBadge(selectedPO.status)}</div>
+            </div>
+            <DialogDescription className="text-xs">
+              เอกสารใบสั่งซื้อสินค้าขนาด A4 พร้อมข้อมูลรายการและช่องลงนาม
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Printable A4 Document Area */}
+          {selectedPO && (
+            <div className="rounded-xl border bg-white text-black p-6 space-y-5 shadow-sm font-sans text-xs">
+              {/* Header */}
+              <div className="flex items-start justify-between border-b pb-4">
+                <div>
+                  <h2 className="text-lg font-bold tracking-tight text-gray-900">
+                    ร้าน MiniMark (มินิมาร์ท โชว์ห่วย)
+                  </h2>
+                  <p className="text-gray-600 text-[11px] mt-0.5">
+                    123/45 ถนนพัฒนาการ แขวงสวนหลวง กรุงเทพฯ 10250
+                  </p>
+                  <p className="text-gray-600 text-[11px]">
+                    โทรศัพท์: 02-123-4567 | อีเมล: store@minimark.local
+                  </p>
+                </div>
+                <div className="text-right space-y-1">
+                  <div className="text-base font-bold text-gray-900 font-mono">
+                    {selectedPO.orderNumber}
+                  </div>
+                  <div className="text-gray-600 text-[11px]">
+                    วันที่สั่งซื้อ: {selectedPO.createdAt}
+                  </div>
+                </div>
+              </div>
+
+              {/* Supplier Info */}
+              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                <span className="font-semibold text-gray-700">
+                  สั่งซื้อจากผู้จัดจำหน่าย (Supplier):{" "}
+                </span>
+                <span className="font-bold text-gray-900">
+                  {selectedPO.supplierName || "ซัพพลายเออร์ทั่วไป"}
+                </span>
+              </div>
+
+              {/* Items Table */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-gray-100 border-b border-gray-200 text-gray-700 font-semibold">
+                    <tr>
+                      <th className="p-2 w-10 text-center">#</th>
+                      <th className="p-2">รายการสินค้า</th>
+                      <th className="p-2 w-32">บาร์โค้ด</th>
+                      <th className="p-2 text-right w-24">จำนวน</th>
+                      <th className="p-2 text-right w-24">ราคาทุน/หน่วย</th>
+                      <th className="p-2 text-right w-28">ยอดรวม (บาท)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {selectedPO.items.map((item, idx) => (
+                      <tr key={item.productId} className="text-gray-800">
+                        <td className="p-2 text-center text-gray-500 font-mono">{idx + 1}</td>
+                        <td className="p-2 font-medium">{item.productName}</td>
+                        <td className="p-2 font-mono text-[11px] text-gray-500">{item.barcode}</td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          {item.quantity} {item.unitName}
+                        </td>
+                        <td className="p-2 text-right font-mono">฿{item.costPrice.toFixed(2)}</td>
+                        <td className="p-2 text-right font-mono font-bold">
+                          ฿{item.total.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-bold border-t border-gray-200 text-gray-900">
+                    <tr>
+                      <td colSpan={3} className="p-2.5 text-right">
+                        ยอดรวมทั้งสิ้น ({selectedPO.totalQuantity} ชิ้น):
+                      </td>
+                      <td
+                        colSpan={3}
+                        className="p-2.5 text-right font-mono text-sm text-emerald-700"
+                      >
+                        ฿
+                        {selectedPO.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Signatures */}
+              <div className="grid grid-cols-2 gap-8 pt-6 border-t border-gray-200">
+                <div className="text-center space-y-8">
+                  <div className="text-gray-600 text-[11px]">ผู้จัดทำใบสั่งซื้อ (Purchaser)</div>
+                  <div className="border-b border-gray-400 w-48 mx-auto" />
+                  <div className="text-gray-500 text-[11px]">วันที่ ____ / ____ / ________</div>
+                </div>
+                <div className="text-center space-y-8">
+                  <div className="text-gray-600 text-[11px]">
+                    ผู้อนุมัติ / เจ้าของร้าน (Approved by)
+                  </div>
+                  <div className="border-b border-gray-400 w-48 mx-auto" />
+                  <div className="text-gray-500 text-[11px]">วันที่ ____ / ____ / ________</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 pt-2 border-t">
+            <Button
+              variant="outline"
+              className="h-11 rounded-xl text-xs gap-1.5"
+              onClick={handlePrintPODocument}
+            >
+              <Printer className="size-4" /> พิมพ์เอกสาร A4 (Print Document)
+            </Button>
+            {selectedPO?.status === "ORDERED" && (
+              <Button
+                className="h-11 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                onClick={() => {
+                  if (selectedPO) {
+                    handleReceivePO(selectedPO);
+                    setDetailModalOpen(false);
+                  }
+                }}
+              >
+                <PackageCheck className="size-4" /> ตรวจรับเข้าสต็อกทันที
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              className="h-11 rounded-xl text-xs"
+              onClick={() => setDetailModalOpen(false)}
+            >
+              ปิดหน้าต่าง
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ADD ITEM DIALOG */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="text-base sm:text-lg">เพิ่มสินค้าในรายการสั่งซื้อ</DialogTitle>
+            <DialogTitle className="text-base sm:text-lg">
+              เพิ่มรายการสินค้าในใบสั่งซื้อ
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+
+          <div className="space-y-3 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">เลือกสินค้า</Label>
+              <Label className="text-xs font-semibold">เลือกสินค้า *</Label>
               <select
-                className="w-full rounded-xl border border-input bg-transparent px-3 py-2.5 text-sm shadow-sm"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm shadow-sm"
                 value={selectedProdId}
                 onChange={(e) => {
                   setSelectedProdId(e.target.value);
@@ -733,19 +1871,19 @@ function ReorderPage() {
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">จำนวนสั่งซื้อ</Label>
+                <Label className="text-xs font-semibold">จำนวนที่สั่ง *</Label>
                 <Input
                   type="number"
                   min="1"
-                  className="h-10 rounded-xl"
+                  className="h-10 rounded-xl font-mono text-base"
                   value={manualQty}
-                  onChange={(e) => setManualQty(Number(e.target.value))}
+                  onChange={(e) => setManualQty(Math.max(1, Number(e.target.value)))}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">หน่วยนับ</Label>
+                <Label className="text-xs font-semibold">หน่วยนับ</Label>
                 <UnitSelect
                   value={manualUnitId}
                   onChange={setManualUnitId}
@@ -754,6 +1892,7 @@ function ReorderPage() {
               </div>
             </div>
           </div>
+
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button
               variant="outline"
@@ -766,36 +1905,88 @@ function ReorderPage() {
               className="h-11 rounded-xl w-full sm:w-auto font-semibold"
               onClick={handleAddManualItem}
             >
-              เพิ่มเข้ารายการ
+              เพิ่มในใบสั่ง
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* SERVER MESSAGING API PUSH MODAL */}
+      {/* SERVER MESSAGING API PUSH DIALOG */}
       <Dialog open={pushModalOpen} onOpenChange={setPushModalOpen}>
         <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="text-base sm:text-lg">
-              ส่งผ่าน LINE Messaging API (Server Push)
+            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+              <Send className="size-5 text-primary" />
+              ส่งข้อความผ่าน LINE Messaging API
             </DialogTitle>
+            <DialogDescription className="text-xs">
+              ส่ง Flex Message เข้า LINE Group ID หรือ User ID โดยตรงจาก Server
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+
+          <div className="space-y-3.5 py-2">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                LINE User ID หรือ Group ID ปลายทาง
-              </Label>
+              <Label className="text-xs font-semibold">ประเภทข้อความที่ส่ง</Label>
+              <Select
+                value={pushMessageType}
+                onValueChange={(val) => setPushMessageType(val as "PURCHASE_ORDER" | "STOCK_ALERT")}
+              >
+                <SelectTrigger className="h-10 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STOCK_ALERT">
+                    ⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ({allReorderNeeded.length} รายการ)
+                  </SelectItem>
+                  <SelectItem value="PURCHASE_ORDER">
+                    📦 ใบสั่งซื้อสินค้าประจำวัน ({fullItems.length} รายการ)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">LINE Group ID หรือ User ID *</Label>
               <Input
-                placeholder="เช่น U1234567890abcdef หรือ C1234567890..."
-                className="font-mono text-sm h-10 rounded-xl"
+                placeholder="เช่น Cxxxxxxxxxx หรือ Uxxxxxxxxxx"
+                className="h-10 font-mono text-xs rounded-xl"
                 value={targetIdInput}
                 onChange={(e) => setTargetIdInput(e.target.value)}
               />
               <p className="text-[11px] text-muted-foreground">
-                ต้องตั้งค่า LINE_CHANNEL_ACCESS_TOKEN บน Server Environment
+                ระบุ Group ID (ขึ้นต้นด้วย C) หรือ User ID (ขึ้นต้นด้วย U) ของผู้รับ
               </p>
             </div>
+
+            {/* Quick Pick from Followers */}
+            {followers.length > 0 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground">
+                  เลือกด่วนจากผู้ใช้งาน / Follower ที่บันทึกไว้:
+                </Label>
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1">
+                  {followers.map((f) => (
+                    <button
+                      key={f.userId}
+                      type="button"
+                      className={`text-left p-2 rounded-xl border text-xs transition-all ${
+                        targetIdInput === f.userId
+                          ? "border-primary bg-primary/10 font-semibold"
+                          : "bg-card hover:bg-muted"
+                      }`}
+                      onClick={() => setTargetIdInput(f.userId)}
+                    >
+                      <div className="truncate text-foreground">{f.displayName}</div>
+                      <div className="font-mono text-[10px] text-muted-foreground truncate">
+                        {f.userId.substring(0, 12)}...
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
           <DialogFooter className="gap-2 pt-2 border-t">
             <Button
               variant="outline"
@@ -805,11 +1996,11 @@ function ReorderPage() {
               ยกเลิก
             </Button>
             <Button
-              className="h-11 rounded-xl w-full sm:w-auto font-semibold"
+              className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5"
               onClick={handleSendServerPush}
               disabled={!targetIdInput.trim() || isSending}
             >
-              ส่งข้อความ Push
+              <Send className="size-4" /> {isSending ? "กำลังส่ง..." : "ส่งข้อความทันที"}
             </Button>
           </DialogFooter>
         </DialogContent>

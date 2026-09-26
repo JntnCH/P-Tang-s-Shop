@@ -154,12 +154,13 @@ function ReceiveCheckPage() {
     if (items.length === 0) return;
 
     items.forEach((item) => {
-      const product = MasterStore.findByBarcode(item.barcode);
-      if (product) {
-        MasterStore.updateProduct(product.id, {
-          stock: product.stock + item.quantity,
-        });
-      }
+      MasterStore.receiveStock(
+        item.barcode,
+        item.quantity,
+        "พนักงานตรวจรับสินค้า",
+        `ตรวจรับสินค้าเข้าสต็อก (${item.quantity} ${item.unit})`,
+      );
+
       MasterStore.addReceive({
         barcode: item.barcode,
         codeType: item.codeType,
@@ -171,7 +172,9 @@ function ReceiveCheckPage() {
       });
     });
 
-    setSaveSuccessMsg(`บันทึกตรวจรับสินค้าสำเร็จจำนวน ${items.length} รายการ เข้าสู่สต็อกแล้ว`);
+    setSaveSuccessMsg(
+      `บันทึกตรวจรับสินค้าสำเร็จจำนวน ${items.length} รายการ (ปรับปรุงยอดสต็อกและบันทึกประวัติ Movement เรียบร้อยแล้ว)`,
+    );
     setItems([]);
     setTimeout(() => setSaveSuccessMsg(""), 5000);
   };
@@ -277,7 +280,7 @@ function ReceiveCheckPage() {
                 <span className="text-xs text-muted-foreground font-medium">
                   หรือกรอกรหัสด้วยมือ:
                 </span>
-                <form onSubmit={handleManualSubmit} className="flex gap-2">
+                <form suppressHydrationWarning onSubmit={handleManualSubmit} className="flex gap-2">
                   <Input
                     placeholder="เช่น 8850123456789..."
                     value={manualCode}

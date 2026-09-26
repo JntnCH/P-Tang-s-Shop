@@ -6,6 +6,7 @@ import {
   PackageMinus,
   ClipboardList,
   History,
+  BarChart3,
   Printer,
   Settings,
   ScanLine,
@@ -18,7 +19,7 @@ export type NavItem = {
   icon: LucideIcon;
 };
 
-/** เมนูหลักของระบบ (Phase 1: โครงสร้างหน้าเท่านั้น) */
+/** เมนูหลักของระบบ */
 export const navItems: NavItem[] = [
   { to: "/", label: "แดชบอร์ด", icon: LayoutDashboard },
   { to: "/products", label: "สินค้า", icon: Package },
@@ -26,6 +27,7 @@ export const navItems: NavItem[] = [
   { to: "/receive", label: "รับสินค้าเข้า", icon: PackagePlus },
   { to: "/issue", label: "จ่ายสินค้าออก", icon: PackageMinus },
   { to: "/reorder", label: "รายการที่ต้องสั่งซื้อ", icon: ClipboardList },
+  { to: "/analytics", label: "รายงาน & กำไร", icon: BarChart3 },
   { to: "/history", label: "ประวัติรายการ", icon: History },
   { to: "/scan", label: "สแกนบาร์โค้ด", icon: ScanLine },
   { to: "/printers", label: "เครื่องพิมพ์", icon: Printer },
