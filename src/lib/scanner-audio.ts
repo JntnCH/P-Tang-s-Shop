@@ -78,6 +78,9 @@ export function playScanSuccessSound(options?: { force?: boolean }): void {
   }
 }
 
+/** Alias for playScanSuccessSound used by POS scanner */
+export const playScanBeep = playScanSuccessSound;
+
 /**
  * Plays a double error/duplicate tone
  */

@@ -10,6 +10,7 @@ import {
   Printer,
   Settings,
   ScanLine,
+  Receipt,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ export type NavItem = {
 /** เมนูหลักของระบบ */
 export const navItems: NavItem[] = [
   { to: "/", label: "แดชบอร์ด", icon: LayoutDashboard },
+  { to: "/documents", label: "เอกสารขาย & ภาษี", icon: Receipt },
   { to: "/products", label: "สินค้า", icon: Package },
   { to: "/stock", label: "สต็อกสินค้า", icon: Boxes },
   { to: "/receive", label: "รับสินค้าเข้า", icon: PackagePlus },
@@ -35,7 +37,7 @@ export const navItems: NavItem[] = [
 ];
 
 /** เมนูลัดด้านล่างสำหรับมือถือ */
-const mobilePaths = ["/", "/products", "/scan", "/receive", "/reorder"];
+const mobilePaths = ["/", "/documents", "/products", "/scan", "/receive"];
 
 export const mobileNavItems: NavItem[] = mobilePaths
   .map((p) => navItems.find((i) => i.to === p))

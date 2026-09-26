@@ -185,7 +185,7 @@ function ProductsPage() {
     error: scanError,
     start: startScanner,
     stop: stopScanner,
-  } = useBarcodeScanner(handleScanDetected, { cooldownMs: 1500, playSound: soundEnabled });
+  } = useBarcodeScanner(handleScanDetected, { cooldownMs: 800, playSound: soundEnabled });
 
   const {
     videoRef: searchVideoRef,
@@ -193,7 +193,7 @@ function ProductsPage() {
     error: searchScanError,
     start: startSearchScanner,
     stop: stopSearchScanner,
-  } = useBarcodeScanner(handleSearchScanDetected, { cooldownMs: 1500, playSound: soundEnabled });
+  } = useBarcodeScanner(handleSearchScanDetected, { cooldownMs: 800, playSound: soundEnabled });
 
   // Auto start/stop scanner when modalOpen & scannerActive changes
   useEffect(() => {

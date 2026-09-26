@@ -327,7 +327,9 @@ function ReorderPage() {
     setAddZoneId("all");
     setAddCatId("all");
     setAddProductSearch("");
-    const firstActive = products.find((p) => p.isActive !== false);
+    const prods = products.length > 0 ? products : MasterStore.getProducts();
+    if (products.length === 0) setProducts(prods);
+    const firstActive = prods.find((p) => p.isActive !== false) || prods[0];
     if (firstActive) {
       setSelectedProdId(firstActive.id);
       setManualQty(firstActive.reorderQuantity || 10);
@@ -1219,21 +1221,36 @@ function ReorderPage() {
                   <span className="text-xs font-semibold text-muted-foreground">
                     รายการสินค้าที่ต้องสั่ง ({fullItems.length})
                   </span>
-                  <span className="text-xs text-muted-foreground">ปรับจำนวนด้วยปุ่ม + / -</span>
+                  <Button
+                    size="sm"
+                    onClick={handleOpenAddModal}
+                    className="h-8 text-xs font-semibold gap-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg"
+                  >
+                    <Plus className="size-3.5" /> เพิ่มรายการเอง
+                  </Button>
                 </div>
 
                 {fullItems.length === 0 ? (
                   <Card className="rounded-2xl p-8 text-center text-muted-foreground">
                     <Package className="size-10 mx-auto mb-2 opacity-40" />
                     <p className="text-sm font-medium">ไม่มีรายการสินค้าในใบสั่งซื้อ</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 rounded-xl text-xs"
-                      onClick={() => setActiveTab("calculator")}
-                    >
-                      เลือกจากระบบคำนวณจำนวนสั่งซื้อ
-                    </Button>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2 mt-4">
+                      <Button
+                        size="sm"
+                        className="rounded-xl text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold w-full sm:w-auto"
+                        onClick={handleOpenAddModal}
+                      >
+                        <Plus className="size-4" /> เพิ่มรายการสั่งซื้อเอง
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl text-xs w-full sm:w-auto"
+                        onClick={() => setActiveTab("calculator")}
+                      >
+                        เลือกจากระบบคำนวณจำนวนสั่งซื้อ
+                      </Button>
+                    </div>
                   </Card>
                 ) : (
                   fullItems.map((item, idx) => (
@@ -1320,9 +1337,18 @@ function ReorderPage() {
                       ระบุ รายการ ➔ จำนวน ➔ หน่วยนับ สำหรับส่ง Flex Message และบันทึก PO
                     </CardDescription>
                   </div>
-                  <Badge variant="outline" className="font-mono">
-                    {totalQuantity} หน่วยรวม
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleOpenAddModal}
+                      className="h-9 px-3 rounded-xl text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                    >
+                      <Plus className="size-4" /> เพิ่มรายการสั่งเอง
+                    </Button>
+                    <Badge variant="outline" className="font-mono">
+                      {totalQuantity} หน่วยรวม
+                    </Badge>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="rounded-xl border overflow-x-auto">
@@ -1342,9 +1368,27 @@ function ReorderPage() {
                           <TableRow>
                             <TableCell
                               colSpan={6}
-                              className="text-center py-10 text-muted-foreground"
+                              className="text-center py-12 text-muted-foreground"
                             >
-                              ไม่มีรายการสินค้าในใบสั่งซื้อ
+                              <Package className="size-8 mx-auto mb-2 opacity-40" />
+                              <p className="font-medium text-sm">ไม่มีรายการสินค้าในใบสั่งซื้อ</p>
+                              <div className="flex items-center justify-center gap-2 mt-3">
+                                <Button
+                                  size="sm"
+                                  onClick={handleOpenAddModal}
+                                  className="h-8 text-xs font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl"
+                                >
+                                  <Plus className="size-3.5" /> คลิกเพื่อเพิ่มรายการสั่งซื้อเอง
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setActiveTab("calculator")}
+                                  className="h-8 text-xs rounded-xl"
+                                >
+                                  เลือกจากระบบคำนวณสั่งซื้อ
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ) : (
@@ -2382,6 +2426,7 @@ function ReorderPage() {
                       type: "success",
                       text: `เพิ่ม ${p.name} (${manualQty} ${getUnitName(manualUnitId || p.unitId)}) เข้าใบสั่งซื้อเรียบร้อย`,
                     });
+                    setActiveTab("create_po");
                     setAddModalOpen(false);
                   }
                 }
