@@ -334,6 +334,10 @@ function ReorderPage() {
       setSelectedProdId(firstActive.id);
       setManualQty(firstActive.reorderQuantity || 10);
       setManualUnitId(firstActive.unitId);
+    } else {
+      setSelectedProdId("");
+      setManualQty(1);
+      setManualUnitId("");
     }
     setAddModalOpen(true);
   };
@@ -2203,7 +2207,7 @@ function ReorderPage() {
                         p.isActive !== false &&
                         (addZoneId === "all" || p.zoneId === addZoneId) &&
                         p.categoryId === c.id,
-                    );
+                    ).length;
                     return (
                       <option key={c.id} value={c.id}>
                         🏷️ {c.name} ({count} สินค้า)
