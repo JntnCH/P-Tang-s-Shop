@@ -4,6 +4,8 @@ export interface SendLineOrderPayload {
   toUserIdOrGroupId?: string | undefined;
   orderSummary: string;
   flexMessage?: unknown;
+  channelAccessToken?: string | undefined;
+  isBroadcast?: boolean;
 }
 
 export interface ServerLineFollower {
@@ -174,18 +176,19 @@ export const registerLineFollowerFn = createServerFn({ method: "POST" })
 export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
   .validator((data: SendLineOrderPayload) => data)
   .handler(async ({ data }) => {
-    const token = process.env["LINE_CHANNEL_ACCESS_TOKEN"];
+    const token = data.channelAccessToken?.trim() || process.env["LINE_CHANNEL_ACCESS_TOKEN"];
 
     if (!token) {
       return {
         success: false,
         configured: false,
-        error: "LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่าบน Server Environment",
+        error: "กรุณาระบุ Channel Access Token หรือตั้งค่า LINE_CHANNEL_ACCESS_TOKEN บน Server",
       };
     }
 
-    const target = data.toUserIdOrGroupId;
-    if (!target) {
+    const isBroadcast = Boolean(data.isBroadcast);
+    const target = data.toUserIdOrGroupId?.trim();
+    if (!isBroadcast && !target) {
       return {
         success: false,
         configured: true,
@@ -193,19 +196,53 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
       };
     }
 
+    // Prepare message payload
+    let messageObj: unknown;
+    if (data.flexMessage && typeof data.flexMessage === "object") {
+      const flexData = data.flexMessage as Record<string, unknown>;
+      if (flexData["type"] === "flex") {
+        messageObj = flexData;
+      } else if (flexData["type"] === "bubble" || flexData["type"] === "carousel") {
+        messageObj = {
+          type: "flex",
+          altText: data.orderSummary || "LINE Flex Message",
+          contents: flexData,
+        };
+      } else if (flexData["contents"]) {
+        messageObj = {
+          type: "flex",
+          altText: (flexData["altText"] as string) || data.orderSummary || "LINE Flex Message",
+          contents: flexData["contents"],
+        };
+      } else {
+        messageObj = {
+          type: "text",
+          text: data.orderSummary,
+        };
+      }
+    } else {
+      messageObj = {
+        type: "text",
+        text: data.orderSummary,
+      };
+    }
+
+    const endpoint = isBroadcast
+      ? "https://api.line.me/v2/bot/message/broadcast"
+      : "https://api.line.me/v2/bot/message/push";
+
+    const requestBody = isBroadcast
+      ? { messages: [messageObj] }
+      : { to: target, messages: [messageObj] };
+
     try {
-      const res = await fetch("https://api.line.me/v2/bot/message/push", {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          to: target,
-          messages: data.flexMessage
-            ? [data.flexMessage]
-            : [{ type: "text", text: data.orderSummary }],
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!res.ok) {

@@ -10,11 +10,14 @@ import {
   CircleSlash,
   ClipboardCheck,
   ClipboardList,
+  Download,
   ExternalLink,
   Eye,
   FileCheck2,
+  FileSpreadsheet,
   FileText,
   Filter,
+  FolderTree,
   Layers,
   MessageCircle,
   Package,
@@ -25,6 +28,7 @@ import {
   Printer,
   RefreshCw,
   Save,
+  Search,
   Send,
   Share2,
   Sliders,
@@ -40,7 +44,13 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import { FormatBadge, UnitSelect } from "@/components/master/MasterSelects";
+import {
+  CategorySelect,
+  FormatBadge,
+  UnitSelect,
+  ZoneSelect,
+} from "@/components/master/MasterSelects";
+import { OrderExportModal, type ExportOrderPayload } from "@/components/orders/OrderExportModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -153,11 +163,18 @@ function ReorderPage() {
     "บริษัท ยูนิลีเวอร์ / ซัพพลายเออร์หลัก",
   );
 
-  // Add Item Modal
+  // Add Item Modal (Cascading: Zone -> Category -> Product)
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addZoneId, setAddZoneId] = useState<string>("all");
+  const [addCatId, setAddCatId] = useState<string>("all");
+  const [addProductSearch, setAddProductSearch] = useState<string>("");
   const [selectedProdId, setSelectedProdId] = useState("");
   const [manualQty, setManualQty] = useState(10);
   const [manualUnitId, setManualUnitId] = useState("");
+
+  // File Export Modal State (PDF, Excel, TXT, JSON)
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportPayload, setExportPayload] = useState<ExportOrderPayload | null>(null);
 
   // PO Detail & Print Modal (Phase 6)
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -166,6 +183,13 @@ function ReorderPage() {
   // Server Messaging API Push Modal
   const [pushModalOpen, setPushModalOpen] = useState(false);
   const [targetIdInput, setTargetIdInput] = useState("");
+  const [customChannelToken, setCustomChannelToken] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("minimark_line_channel_token") || "";
+    }
+    return "";
+  });
+  const [isBroadcastMode, setIsBroadcastMode] = useState(false);
   const [pushMessageType, setPushMessageType] = useState<"PURCHASE_ORDER" | "STOCK_ALERT">(
     "STOCK_ALERT",
   );
@@ -283,6 +307,84 @@ function ReorderPage() {
 
   const handleRemoveOrder = (productId: string) => {
     setOrderList((prev) => prev.filter((i) => i.productId !== productId));
+  };
+
+  // Filter available products for cascading selection in Add Item Modal
+  const availableProductsForAdd = products.filter((p) => {
+    if (p.isActive === false) return false;
+    const matchesZone = addZoneId === "all" || p.zoneId === addZoneId;
+    const matchesCat = addCatId === "all" || p.categoryId === addCatId;
+    const query = addProductSearch.toLowerCase().trim();
+    const matchesSearch =
+      !query ||
+      p.name.toLowerCase().includes(query) ||
+      p.barcode.toLowerCase().includes(query) ||
+      (p.sku && p.sku.toLowerCase().includes(query));
+    return matchesZone && matchesCat && matchesSearch;
+  });
+
+  const handleOpenAddModal = () => {
+    setAddZoneId("all");
+    setAddCatId("all");
+    setAddProductSearch("");
+    const firstActive = products.find((p) => p.isActive !== false);
+    if (firstActive) {
+      setSelectedProdId(firstActive.id);
+      setManualQty(firstActive.reorderQuantity || 10);
+      setManualUnitId(firstActive.unitId);
+    }
+    setAddModalOpen(true);
+  };
+
+  const handleOpenExportCurrentOrder = () => {
+    if (fullItems.length === 0) return;
+    const payload: ExportOrderPayload = {
+      orderNumber: `PO-${Date.now().toString().slice(-6)}`,
+      createdAt:
+        new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH"),
+      storeName: "ร้าน MiniMark",
+      supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
+      items: fullItems.map((f) => ({
+        productName: f.product.name,
+        barcode: f.product.barcode,
+        categoryName: getCatName(f.product.categoryId),
+        zoneName: zones.find((z) => z.id === f.product.zoneId)?.name || "-",
+        quantity: f.quantity,
+        unitName: f.unitName,
+        costPrice: f.product.costPrice,
+        total: f.priceEstimate,
+      })),
+      totalQuantity,
+      totalCost,
+    };
+    setExportPayload(payload);
+    setExportModalOpen(true);
+  };
+
+  const handleOpenExportPO = (po: PurchaseOrderRecord) => {
+    const payload: ExportOrderPayload = {
+      orderNumber: po.orderNumber,
+      createdAt: po.createdAt,
+      storeName: "ร้าน MiniMark",
+      supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+      items: po.items.map((i) => {
+        const p = products.find((prod) => prod.id === i.productId);
+        return {
+          productName: i.productName,
+          barcode: i.barcode,
+          categoryName: p ? getCatName(p.categoryId) : "-",
+          zoneName: p ? zones.find((z) => z.id === p.zoneId)?.name || "-" : "-",
+          quantity: i.quantity,
+          unitName: i.unitName,
+          costPrice: i.costPrice,
+          total: i.total,
+        };
+      }),
+      totalQuantity: po.totalQuantity,
+      totalCost: po.totalCost,
+    };
+    setExportPayload(payload);
+    setExportModalOpen(true);
   };
 
   const handleAddManualItem = () => {
@@ -598,8 +700,12 @@ function ReorderPage() {
 
   // Send via Server Messaging API push handler
   const handleSendServerPush = async () => {
-    if (!targetIdInput.trim()) return;
+    if (!isBroadcastMode && !targetIdInput.trim()) return;
     setIsSending(true);
+
+    if (customChannelToken.trim() && typeof window !== "undefined") {
+      localStorage.setItem("minimark_line_channel_token", customChannelToken.trim());
+    }
 
     try {
       if (pushMessageType === "STOCK_ALERT") {
@@ -615,7 +721,9 @@ function ReorderPage() {
 
         const res = await sendLineMessagingApiFn({
           data: {
-            toUserIdOrGroupId: targetIdInput.trim(),
+            toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
+            isBroadcast: isBroadcastMode,
+            channelAccessToken: customChannelToken.trim() || undefined,
             orderSummary: plainText,
             flexMessage: flexMsg,
           },
@@ -624,7 +732,9 @@ function ReorderPage() {
         if (res.success) {
           setStatusMessage({
             type: "success",
-            text: `ส่งแจ้งเตือนสต็อกผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput}`,
+            text: isBroadcastMode
+              ? `บรอดแคสต์ Flex Message แจ้งเตือนสต็อกสินค้าไปยังผู้ติดตามทุกคนสำเร็จ`
+              : `ส่งแจ้งเตือนสต็อกผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput}`,
           });
           setPushModalOpen(false);
         } else {
@@ -641,7 +751,9 @@ function ReorderPage() {
 
         const res = await sendLineMessagingApiFn({
           data: {
-            toUserIdOrGroupId: targetIdInput.trim(),
+            toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
+            isBroadcast: isBroadcastMode,
+            channelAccessToken: customChannelToken.trim() || undefined,
             orderSummary: plainText,
             flexMessage: flexMsg,
           },
@@ -651,7 +763,9 @@ function ReorderPage() {
           handleSavePO("ORDERED");
           setStatusMessage({
             type: "success",
-            text: `ส่งใบสั่งซื้อผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput} และบันทึกสถานะเรียบร้อย`,
+            text: isBroadcastMode
+              ? `บรอดแคสต์ Flex Message ใบสั่งซื้อสินค้าไปยังผู้ติดตามทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย`
+              : `ส่งใบสั่งซื้อผ่าน LINE Messaging API สำเร็จไปยัง ID: ${targetIdInput} และบันทึกสถานะเรียบร้อย`,
           });
           setPushModalOpen(false);
         } else {
@@ -713,7 +827,7 @@ function ReorderPage() {
             คำนวณจำนวนสั่งซื้อ, จัดการใบสั่งซื้อ (PO Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
@@ -723,16 +837,18 @@ function ReorderPage() {
             <RefreshCw className="size-3.5" /> รีเฟรชข้อมูล
           </Button>
           <Button
+            variant="outline"
             size="sm"
-            onClick={() => {
-              if (products[0]) {
-                setSelectedProdId(products[0].id);
-                setManualQty(products[0].reorderQuantity || 10);
-                setManualUnitId(products[0].unitId);
-              }
-              setAddModalOpen(true);
-            }}
-            className="h-10 px-3 rounded-xl text-xs font-semibold gap-1.5"
+            onClick={handleOpenExportCurrentOrder}
+            disabled={fullItems.length === 0}
+            className="h-10 px-3 rounded-xl text-xs gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 bg-emerald-50/40 dark:bg-emerald-950/20"
+          >
+            <Download className="size-3.5 text-emerald-600" /> ส่งออกไฟล์ ({fullItems.length})
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleOpenAddModal}
+            className="h-10 px-3.5 rounded-xl text-xs font-bold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
           >
             <Plus className="size-4" /> เพิ่มรายการสั่งเอง
           </Button>
@@ -1075,17 +1191,25 @@ function ReorderPage() {
           <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
             {/* REORDER ITEMS LIST */}
             <div className="lg:col-span-7 space-y-3">
-              <Card className="rounded-2xl p-4 space-y-3 border-border/80">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">
-                    ชื่อซัพพลายเออร์ / ร้านค้าผู้จัดจำหน่าย
-                  </Label>
-                  <Input
-                    placeholder="เช่น บริษัท ยูนิลีเวอร์, แม็คโคร, ร้านขายส่ง ก."
-                    className="h-10 rounded-xl text-sm"
-                    value={supplierNameInput}
-                    onChange={(e) => setSupplierNameInput(e.target.value)}
-                  />
+              <Card className="rounded-2xl p-4 border-border/80 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                  <div className="space-y-1.5 flex-1">
+                    <Label className="text-xs font-semibold">
+                      ชื่อซัพพลายเออร์ / ร้านค้าผู้จัดจำหน่าย
+                    </Label>
+                    <Input
+                      placeholder="เช่น บริษัท ยูนิลีเวอร์, แม็คโคร, ร้านขายส่ง ก."
+                      className="h-10 rounded-xl text-sm"
+                      value={supplierNameInput}
+                      onChange={(e) => setSupplierNameInput(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleOpenAddModal}
+                    className="h-10 rounded-xl font-semibold gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shrink-0 shadow-xs active:scale-95"
+                  >
+                    <Plus className="size-4" /> เพิ่มสินค้าในใบสั่ง
+                  </Button>
                 </div>
               </Card>
 
@@ -1354,6 +1478,18 @@ function ReorderPage() {
                       onClick={handlePreviewOrderFlex}
                     >
                       <Eye className="size-4 text-emerald-600" /> ดูตัวอย่าง LINE Flex Message
+                    </Button>
+
+                    {/* Export in Various Formats Button */}
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      disabled={fullItems.length === 0}
+                      className="h-11 w-full gap-2 border-blue-500/50 bg-blue-50/50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100/50 font-bold text-xs rounded-xl shadow-2xs active:scale-95"
+                      onClick={handleOpenExportCurrentOrder}
+                    >
+                      <Share2 className="size-4 text-blue-600" /> ส่งออกไฟล์ (PDF / Excel / ภาพ /
+                      ข้อความ)
                     </Button>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -1915,57 +2051,297 @@ function ReorderPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ADD ITEM DIALOG */}
+      {/* ADD ITEM DIALOG (CASCADING: ZONE -> CATEGORY -> PRODUCT) */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
-        <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
+        <DialogContent className="w-[96vw] max-w-lg rounded-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-base sm:text-lg">
+            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+              <PackagePlus className="size-5 text-primary" />
               เพิ่มรายการสินค้าในใบสั่งซื้อ
             </DialogTitle>
+            <DialogDescription className="text-xs">
+              เลือกตามลำดับ: 1. เลือกโซน ➔ 2. เลือกหมวดหมู่ ➔ 3. เลือกสินค้า และระบุจำนวน
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">เลือกสินค้า *</Label>
+          <div className="space-y-4 py-2">
+            {/* STEP 1: SELECT ZONE */}
+            <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                    1
+                  </span>
+                  เลือกโซนจัดเก็บ (Zone) *
+                </Label>
+                <Badge variant="outline" className="text-[10px]">
+                  {addZoneId === "all"
+                    ? "ทุกโซน"
+                    : zones.find((z) => z.id === addZoneId)?.name || "โซน"}
+                </Badge>
+              </div>
               <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm shadow-sm"
-                value={selectedProdId}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-xs sm:text-sm shadow-xs font-medium"
+                value={addZoneId}
                 onChange={(e) => {
-                  setSelectedProdId(e.target.value);
-                  const p = products.find((prod) => prod.id === e.target.value);
-                  if (p) {
-                    setManualQty(p.reorderQuantity || 10);
-                    setManualUnitId(p.unitId);
+                  const newZoneId = e.target.value;
+                  setAddZoneId(newZoneId);
+                  if (addCatId !== "all") {
+                    const catExistsInZone = products.some(
+                      (p) =>
+                        p.isActive !== false &&
+                        (newZoneId === "all" || p.zoneId === newZoneId) &&
+                        p.categoryId === addCatId,
+                    );
+                    if (!catExistsInZone) {
+                      setAddCatId("all");
+                    }
                   }
                 }}
               >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} (คงเหลือ: {p.stock})
-                  </option>
-                ))}
+                <option value="all">
+                  🌐 ทุกโซนจัดเก็บ ({products.filter((p) => p.isActive !== false).length} สินค้า)
+                </option>
+                {zones.map((z) => {
+                  const count = products.filter(
+                    (p) => p.isActive !== false && p.zoneId === z.id,
+                  ).length;
+                  return (
+                    <option key={z.id} value={z.id}>
+                      📍 {z.code} - {z.name} ({count} สินค้า)
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">จำนวนที่สั่ง *</Label>
+            {/* STEP 2: SELECT CATEGORY */}
+            <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                    2
+                  </span>
+                  เลือกหมวดหมู่สินค้า (Category) *
+                </Label>
+                <Badge variant="outline" className="text-[10px]">
+                  {addCatId === "all"
+                    ? "ทุกหมวดหมู่"
+                    : categories.find((c) => c.id === addCatId)?.name || "หมวดหมู่"}
+                </Badge>
+              </div>
+              <select
+                className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-xs sm:text-sm shadow-xs font-medium"
+                value={addCatId}
+                onChange={(e) => setAddCatId(e.target.value)}
+              >
+                <option value="all">
+                  📁 ทุกหมวดหมู่ในโซนนี้ (
+                  {
+                    products.filter(
+                      (p) =>
+                        p.isActive !== false && (addZoneId === "all" || p.zoneId === addZoneId),
+                    ).length
+                  }{" "}
+                  สินค้า)
+                </option>
+                {categories
+                  .filter((c) => {
+                    if (addZoneId === "all") return true;
+                    return products.some(
+                      (p) =>
+                        p.isActive !== false && p.zoneId === addZoneId && p.categoryId === c.id,
+                    );
+                  })
+                  .map((c) => {
+                    const count = products.filter(
+                      (p) =>
+                        p.isActive !== false &&
+                        (addZoneId === "all" || p.zoneId === addZoneId) &&
+                        p.categoryId === c.id,
+                    );
+                    return (
+                      <option key={c.id} value={c.id}>
+                        🏷️ {c.name} ({count} สินค้า)
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+
+            {/* STEP 3: SELECT PRODUCT */}
+            <div className="space-y-2 p-3 rounded-xl bg-muted/40 border">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                    3
+                  </span>
+                  เลือกสินค้าที่ต้องการสั่งซื้อ (Product) *
+                </Label>
+                <span className="text-[11px] text-muted-foreground font-medium">
+                  พบ {availableProductsForAdd.length} รายการ
+                </span>
+              </div>
+
+              {/* Quick Search */}
+              <div className="relative">
+                <Search className="size-3.5 absolute left-3 top-3 text-muted-foreground" />
                 <Input
-                  type="number"
-                  min="1"
-                  className="h-10 rounded-xl font-mono text-base"
-                  value={manualQty}
-                  onChange={(e) => setManualQty(Math.max(1, Number(e.target.value)))}
+                  placeholder="ค้นหาชื่อสินค้า, บาร์โค้ด หรือ SKU..."
+                  className="pl-8 h-9 text-xs rounded-lg"
+                  value={addProductSearch}
+                  onChange={(e) => setAddProductSearch(e.target.value)}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">หน่วยนับ</Label>
-                <UnitSelect
-                  value={manualUnitId}
-                  onChange={setManualUnitId}
-                  className="h-10 rounded-xl"
-                />
-              </div>
+
+              {/* Product Select Box */}
+              {availableProductsForAdd.length === 0 ? (
+                <div className="p-4 text-center text-xs text-muted-foreground border rounded-xl bg-card">
+                  ไม่พบสินค้าในโซน/หมวดหมู่นี้ ลองเปลี่ยนเงื่อนไขการค้นหา
+                </div>
+              ) : (
+                <select
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-xs sm:text-sm shadow-xs font-medium"
+                  value={selectedProdId || availableProductsForAdd[0]?.id || ""}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setSelectedProdId(newId);
+                    const p = products.find((prod) => prod.id === newId);
+                    if (p) {
+                      setManualQty(p.reorderQuantity || 10);
+                      setManualUnitId(p.unitId);
+                    }
+                  }}
+                >
+                  {availableProductsForAdd.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} • สต็อก: {p.stock} {getUnitName(p.unitId)} (ทุน ฿
+                      {p.costPrice.toFixed(0)})
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Selected Product Card Preview */}
+              {(() => {
+                const currentProd =
+                  products.find((p) => p.id === selectedProdId) ||
+                  availableProductsForAdd[0] ||
+                  null;
+                if (!currentProd) return null;
+
+                return (
+                  <div className="mt-2 p-3 rounded-xl border bg-card space-y-3 shadow-2xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs sm:text-sm font-bold text-foreground">
+                          {currentProd.name}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5 flex-wrap">
+                          <span className="font-mono">{currentProd.barcode}</span>
+                          <span>•</span>
+                          <span>{getCatName(currentProd.categoryId)}</span>
+                          <span>•</span>
+                          <span>
+                            {zones.find((z) => z.id === currentProd.zoneId)?.name || "โซนทั่วไป"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-muted-foreground block">
+                          คงเหลือปัจจุบัน
+                        </span>
+                        <Badge
+                          variant={
+                            currentProd.stock <= 0
+                              ? "destructive"
+                              : currentProd.stock <= currentProd.minStock
+                                ? "secondary"
+                                : "outline"
+                          }
+                          className="text-[10px] font-mono font-bold"
+                        >
+                          {currentProd.stock} {getUnitName(currentProd.unitId)}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Quantity & Unit Stepper */}
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold">จำนวนที่สั่ง *</Label>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="size-9 rounded-lg"
+                            onClick={() => setManualQty((q) => Math.max(1, q - 1))}
+                          >
+                            -
+                          </Button>
+                          <Input
+                            type="number"
+                            min="1"
+                            className="h-9 rounded-lg font-mono text-center font-bold text-sm"
+                            value={manualQty}
+                            onChange={(e) => setManualQty(Math.max(1, Number(e.target.value) || 1))}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="size-9 rounded-lg"
+                            onClick={() => setManualQty((q) => q + 1)}
+                          >
+                            +
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold">หน่วยนับ</Label>
+                        <UnitSelect
+                          value={manualUnitId || currentProd.unitId}
+                          onChange={setManualUnitId}
+                          className="h-9 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Add Presets */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                      <span className="text-[10px] text-muted-foreground font-medium">
+                        เพิ่มด่วน:
+                      </span>
+                      {[5, 10, 20, 50, 100].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          className="px-2 py-0.5 rounded-md border text-[11px] font-mono hover:bg-muted font-medium transition-all"
+                          onClick={() => setManualQty(preset)}
+                        >
+                          +{preset}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Subtotal Calculation */}
+                    <div className="flex justify-between items-center p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-semibold">
+                      <span className="text-emerald-800 dark:text-emerald-200">
+                        ประมาณการยอดสั่งซื้อ (ทุน ฿{currentProd.costPrice.toFixed(2)}
+                        /หน่วย):
+                      </span>
+                      <span className="font-mono text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                        ฿
+                        {(manualQty * (currentProd.costPrice || 0)).toLocaleString("th-TH", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -1978,10 +2354,41 @@ function ReorderPage() {
               ยกเลิก
             </Button>
             <Button
-              className="h-11 rounded-xl w-full sm:w-auto font-semibold"
-              onClick={handleAddManualItem}
+              className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5 bg-primary text-primary-foreground shadow-xs"
+              onClick={() => {
+                const prodId = selectedProdId || availableProductsForAdd[0]?.id;
+                if (prodId) {
+                  const p = products.find((prod) => prod.id === prodId);
+                  if (p) {
+                    setOrderList((prev) => {
+                      const existing = prev.find((i) => i.productId === prodId);
+                      if (existing) {
+                        return prev.map((i) =>
+                          i.productId === prodId
+                            ? { ...i, quantity: i.quantity + Number(manualQty) }
+                            : i,
+                        );
+                      }
+                      return [
+                        ...prev,
+                        {
+                          productId: prodId,
+                          quantity: Number(manualQty) || 1,
+                          unitId: manualUnitId || p.unitId,
+                        },
+                      ];
+                    });
+                    setStatusMessage({
+                      type: "success",
+                      text: `เพิ่ม ${p.name} (${manualQty} ${getUnitName(manualUnitId || p.unitId)}) เข้าใบสั่งซื้อเรียบร้อย`,
+                    });
+                    setAddModalOpen(false);
+                  }
+                }
+              }}
+              disabled={availableProductsForAdd.length === 0}
             >
-              เพิ่มในใบสั่ง
+              <Plus className="size-4" /> เพิ่มสินค้าในใบสั่งซื้อ
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1989,14 +2396,14 @@ function ReorderPage() {
 
       {/* SERVER MESSAGING API PUSH DIALOG */}
       <Dialog open={pushModalOpen} onOpenChange={setPushModalOpen}>
-        <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
+        <DialogContent className="w-[94vw] max-w-lg rounded-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
-              <Send className="size-5 text-primary" />
-              ส่งข้อความผ่าน LINE Messaging API
+              <Send className="size-5 text-[#06C755]" />
+              ส่ง Flex Message ผ่าน LINE Messaging API
             </DialogTitle>
             <DialogDescription className="text-xs">
-              ส่ง Flex Message เข้า LINE Group ID หรือ User ID โดยตรงจาก Server
+              ส่ง Flex Message การ์ดสวยงามตรงเข้า LINE Group ID หรือ User ID จาก Server
             </DialogDescription>
           </DialogHeader>
 
@@ -2021,21 +2428,41 @@ function ReorderPage() {
               </Select>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">LINE Group ID หรือ User ID *</Label>
-              <Input
-                placeholder="เช่น Cxxxxxxxxxx หรือ Uxxxxxxxxxx"
-                className="h-10 font-mono text-xs rounded-xl"
-                value={targetIdInput}
-                onChange={(e) => setTargetIdInput(e.target.value)}
+            {/* Broadcast toggle */}
+            <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/40">
+              <div className="space-y-0.5">
+                <Label className="text-xs font-semibold">
+                  บรอดแคสต์ส่งถึงทุกคน (Broadcast to all followers)
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  ส่งข้อความ Flex แจ้งเตือนไปยังเพื่อนและผู้ติดตามบอททุกคนพร้อมกัน
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={isBroadcastMode}
+                onChange={(e) => setIsBroadcastMode(e.target.checked)}
+                className="size-4 rounded accent-emerald-600"
               />
-              <p className="text-[11px] text-muted-foreground">
-                ระบุ Group ID (ขึ้นต้นด้วย C) หรือ User ID (ขึ้นต้นด้วย U) ของผู้รับ
-              </p>
             </div>
 
+            {!isBroadcastMode && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">LINE Group ID หรือ User ID *</Label>
+                <Input
+                  placeholder="เช่น Cxxxxxxxxxx (Group) หรือ Uxxxxxxxxxx (User)"
+                  className="h-10 font-mono text-xs rounded-xl"
+                  value={targetIdInput}
+                  onChange={(e) => setTargetIdInput(e.target.value)}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  ระบุ Group ID (ขึ้นต้นด้วย C) หรือ User ID (ขึ้นต้นด้วย U) ของผู้รับ
+                </p>
+              </div>
+            )}
+
             {/* Quick Pick from Followers */}
-            {followers.length > 0 && (
+            {!isBroadcastMode && followers.length > 0 && (
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-muted-foreground">
                   เลือกด่วนจากผู้ใช้งาน / Follower ที่บันทึกไว้:
@@ -2061,9 +2488,36 @@ function ReorderPage() {
                 </div>
               </div>
             )}
+
+            {/* Channel Access Token Override */}
+            <div className="space-y-1.5 p-3 rounded-xl border bg-muted/20">
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span>Channel Access Token (อุปกรณ์ / Server)</span>
+                {serverConfig?.hasAccessToken ? (
+                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px]">
+                    พร้อมใช้งานบน Server
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] text-amber-600">
+                    ไม่ได้ตั้งค่าบน Server
+                  </Badge>
+                )}
+              </Label>
+              <Input
+                type="password"
+                placeholder={
+                  serverConfig?.hasAccessToken
+                    ? "ใช้ค่าจาก LINE_CHANNEL_ACCESS_TOKEN บนเซิร์ฟเวอร์ (หรือระบุเพื่อแทนที่)"
+                    : "วาง Channel Access Token ที่นี่..."
+                }
+                className="h-9 font-mono text-xs rounded-lg"
+                value={customChannelToken}
+                onChange={(e) => setCustomChannelToken(e.target.value)}
+              />
+            </div>
           </div>
 
-          <DialogFooter className="gap-2 pt-2 border-t">
+          <DialogFooter className="gap-2 pt-2 border-t flex-wrap">
             <Button
               type="button"
               variant="outline"
@@ -2080,15 +2534,15 @@ function ReorderPage() {
             </Button>
             <Button
               variant="outline"
-              className="h-11 rounded-xl w-full sm:w-auto"
+              className="h-11 rounded-xl"
               onClick={() => setPushModalOpen(false)}
             >
               ยกเลิก
             </Button>
             <Button
-              className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white"
+              className="h-11 rounded-xl font-semibold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white"
               onClick={handleSendServerPush}
-              disabled={!targetIdInput.trim() || isSending}
+              disabled={(!isBroadcastMode && !targetIdInput.trim()) || isSending}
             >
               <Send className="size-4" /> {isSending ? "กำลังส่ง..." : "ส่งข้อความทันที"}
             </Button>
@@ -2126,6 +2580,13 @@ function ReorderPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ORDER FILE EXPORT MODAL (PDF, EXCEL, PNG SLIP, CHAT, JSON) */}
+      <OrderExportModal
+        open={exportModalOpen}
+        onOpenChange={setExportModalOpen}
+        payload={exportPayload}
+      />
     </div>
   );
 }
