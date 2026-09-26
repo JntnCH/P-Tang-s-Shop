@@ -16,14 +16,18 @@ import {
   Printer,
   QrCode,
   RefreshCw,
+  ScanLine,
   Search,
   SlidersHorizontal,
   Sparkles,
   Tag,
   Trash2,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { BarcodeDisplay } from "@/components/barcode/BarcodeDisplay";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -34,6 +38,7 @@ import {
   UnitSelect,
   ZoneSelect,
 } from "@/components/master/MasterSelects";
+import { ProductImageUploader } from "@/components/products/ProductImageUploader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,6 +71,7 @@ import {
 } from "@/components/ui/table";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { generateStoreBarcode, inspectBarcode } from "@/lib/barcode-engine";
+import { isScanSoundEnabled, playScanSuccessSound, setScanSoundEnabled } from "@/lib/scanner-audio";
 import {
   MasterStore,
   type CategoryItem,
@@ -135,18 +141,32 @@ function ProductsPage() {
   const [skuError, setSkuError] = useState<string | null>(null);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
 
+  // Sound feedback state
+  const [soundEnabled, setSoundState] = useState(isScanSoundEnabled());
+
   // Camera Scanner inside Product Form
   const [scannerActive, setScannerActive] = useState(false);
 
   // Search Camera Scanner
   const [searchScannerActive, setSearchScannerActive] = useState(false);
 
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundState(next);
+    setScanSoundEnabled(next);
+    if (next) {
+      playScanSuccessSound({ force: true });
+      toast.success("เปิดเสียงแจ้งเตือนสแกนเนอร์แล้ว");
+    } else {
+      toast.info("ปิดเสียงแจ้งเตือนสแกนเนอร์แล้ว");
+    }
+  };
+
   const handleScanDetected = (code: string, format?: string, type?: "QR" | "Barcode") => {
     setFormBarcode(code);
     setFormCodeType(type || "Barcode");
     setFormFormat(format || "EAN_13");
-    stopScanner();
-    setScannerActive(false);
+    toast.success(`สแกนบาร์โค้ดสำเร็จ: ${code}`);
 
     // Validate barcode duplication immediately
     validateBarcodeLive(code, editingProduct?.id);
@@ -156,21 +176,39 @@ function ProductsPage() {
     setSearchQuery(code);
     stopSearchScanner();
     setSearchScannerActive(false);
+    toast.success(`สแกนค้นหา: ${code}`);
   };
 
   const {
     videoRef,
+    status: formScanStatus,
     error: scanError,
     start: startScanner,
     stop: stopScanner,
-  } = useBarcodeScanner(handleScanDetected, { cooldownMs: 1500 });
+  } = useBarcodeScanner(handleScanDetected, { cooldownMs: 1500, playSound: soundEnabled });
 
   const {
     videoRef: searchVideoRef,
+    status: searchScanStatus,
     error: searchScanError,
     start: startSearchScanner,
     stop: stopSearchScanner,
-  } = useBarcodeScanner(handleSearchScanDetected, { cooldownMs: 1500 });
+  } = useBarcodeScanner(handleSearchScanDetected, { cooldownMs: 1500, playSound: soundEnabled });
+
+  // Auto start/stop scanner when modalOpen & scannerActive changes
+  useEffect(() => {
+    if (modalOpen && scannerActive) {
+      const timer = setTimeout(() => {
+        void startScanner();
+      }, 150);
+      return () => {
+        clearTimeout(timer);
+        stopScanner();
+      };
+    } else {
+      stopScanner();
+    }
+  }, [modalOpen, scannerActive, startScanner, stopScanner]);
 
   const [canViewCostPrice, setCanViewCostPrice] = useState(
     AuthService.hasPermission("canViewCostPrice"),
@@ -187,11 +225,17 @@ function ProductsPage() {
   useEffect(() => {
     loadData();
     const handleStoreChange = () => loadData();
+    const handleSoundChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ enabled: boolean }>).detail;
+      if (detail) setSoundState(detail.enabled);
+    };
     window.addEventListener("minimark_store_change", handleStoreChange);
     window.addEventListener("minimark_auth_change", handleStoreChange);
+    window.addEventListener("minimark_sound_preference_change", handleSoundChange);
     return () => {
       window.removeEventListener("minimark_store_change", handleStoreChange);
       window.removeEventListener("minimark_auth_change", handleStoreChange);
+      window.removeEventListener("minimark_sound_preference_change", handleSoundChange);
     };
   }, []);
 
@@ -245,7 +289,8 @@ function ProductsPage() {
     setFormError(null);
     setSkuError(null);
     setBarcodeError(null);
-    setScannerActive(false);
+    // Auto-open scanner on add product
+    setScannerActive(true);
     setModalOpen(true);
   };
 
@@ -258,6 +303,8 @@ function ProductsPage() {
     setFormCodeType(formatType === "QR_CODE" ? "QR" : "Barcode");
     setFormFormat(generated.format);
     validateBarcodeLive(generated.barcode, editingProduct?.id);
+    playScanSuccessSound();
+    toast.success(`สร้างรหัส ${generated.format}: ${generated.barcode}`);
   };
 
   const handleOpenBarcodePreview = (product: ProductItem, e?: React.MouseEvent) => {
@@ -307,11 +354,6 @@ function ProductsPage() {
       return;
     }
 
-    if (formPrice < formCost) {
-      // Warning or allow with alert
-      console.warn("ราคาขายต่ำกว่าราคาทุน");
-    }
-
     if (editingProduct) {
       MasterStore.updateProduct(editingProduct.id, {
         sku: formSku.trim(),
@@ -331,6 +373,7 @@ function ProductsPage() {
         reorderQuantity: Number(formReorderQty) || Number(formTargetStock) || 15,
         isActive: formIsActive,
       });
+      toast.success("อัปเดตข้อมูลสินค้าสำเร็จ");
     } else {
       MasterStore.addProduct({
         sku: formSku.trim(),
@@ -350,6 +393,7 @@ function ProductsPage() {
         reorderQuantity: Number(formReorderQty) || Number(formTargetStock) || 15,
         isActive: formIsActive,
       });
+      toast.success("เพิ่มสินค้าใหม่สำเร็จ");
     }
 
     stopScanner();
@@ -367,6 +411,7 @@ function ProductsPage() {
       MasterStore.deleteProduct(productToDelete.id);
       setDeleteDialogOpen(false);
       setProductToDelete(null);
+      toast.success("ลบสินค้าออกจากระบบแล้ว");
     }
   };
 
@@ -405,16 +450,16 @@ function ProductsPage() {
             <Package className="size-6 text-primary" /> ระบบจัดการสินค้า (Phase 2)
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            บันทึก SKU, บาร์โค้ด, ราคา, หมวดหมู่, รูปภาพ, สต็อก และตั้งค่าเปิด/ปิดการขาย
+            บันทึก SKU, บาร์โค้ด, ถ่ายรูปสินค้า, ราคา, หมวดหมู่, สต็อก และตั้งค่าเปิด/ปิดการขาย
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button
             onClick={handleOpenCreate}
             size="lg"
-            className="h-11 sm:h-10 w-full sm:w-auto font-semibold gap-2 rounded-xl shadow-sm active:scale-95"
+            className="h-12 sm:h-11 w-full sm:w-auto font-bold gap-2 rounded-xl shadow-md bg-primary hover:bg-primary/90 text-primary-foreground active:scale-95 text-sm sm:text-base px-5"
           >
-            <Plus className="size-5" /> เพิ่มสินค้าใหม่
+            <Plus className="size-5" /> เพิ่มสินค้าใหม่ (สแกนอัตโนมัติ)
           </Button>
         </div>
       </div>
@@ -423,16 +468,16 @@ function ProductsPage() {
       <Card className="rounded-2xl border-border/80 shadow-sm">
         <CardContent className="p-3 sm:p-5 space-y-3">
           <div className="grid gap-2.5 md:grid-cols-12">
-            {/* Search Input with Scan Button */}
-            <div className="relative md:col-span-5">
-              <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
+            {/* Search Input with Large Scan Button */}
+            <div className="relative md:col-span-5 flex items-center">
+              <Search className="absolute left-3 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="ค้นหาชื่อ, SKU หรือ ยิงบาร์โค้ด..."
-                className="pl-9 pr-20 h-10 rounded-xl font-medium"
+                className="pl-9 pr-24 h-11 rounded-xl font-medium"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
-              <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+              <div className="absolute right-1.5 flex items-center gap-1">
                 {searchQuery ? (
                   <button
                     type="button"
@@ -445,8 +490,8 @@ function ProductsPage() {
                 <Button
                   type="button"
                   size="sm"
-                  variant={searchScannerActive ? "secondary" : "ghost"}
-                  className="h-7 px-2 text-xs gap-1 rounded-lg"
+                  variant={searchScannerActive ? "default" : "secondary"}
+                  className="h-8 px-2.5 text-xs font-semibold gap-1.5 rounded-lg shadow-xs"
                   onClick={() => {
                     if (searchScannerActive) {
                       stopSearchScanner();
@@ -457,7 +502,8 @@ function ProductsPage() {
                     }
                   }}
                 >
-                  <Camera className="size-3.5" /> สแกน
+                  <Camera className="size-3.5" />
+                  {searchScannerActive ? "ปิดกล้อง" : "สแกน"}
                 </Button>
               </div>
             </div>
@@ -468,7 +514,7 @@ function ProductsPage() {
                 value={selectedCategory === "all" ? "" : selectedCategory}
                 onChange={(val) => setSelectedCategory(val || "all")}
                 placeholder="ทุกหมวดหมู่สินค้า"
-                className="h-10 rounded-xl"
+                className="h-11 rounded-xl"
               />
             </div>
 
@@ -478,7 +524,7 @@ function ProductsPage() {
                 value={selectedZone === "all" ? "" : selectedZone}
                 onChange={(val) => setSelectedZone(val || "all")}
                 placeholder="ทุกโซนจัดเก็บ"
-                className="h-10 rounded-xl"
+                className="h-11 rounded-xl"
               />
             </div>
 
@@ -488,7 +534,7 @@ function ProductsPage() {
                 value={statusFilter}
                 onValueChange={(val) => setStatusFilter(val as "ALL" | "ACTIVE" | "INACTIVE")}
               >
-                <SelectTrigger className="h-10 rounded-xl">
+                <SelectTrigger className="h-11 rounded-xl">
                   <SelectValue placeholder="สถานะสินค้า" />
                 </SelectTrigger>
                 <SelectContent>
@@ -502,32 +548,57 @@ function ProductsPage() {
 
           {/* Quick Search Camera View if Open */}
           {searchScannerActive ? (
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 space-y-2">
+            <div className="rounded-xl border border-primary/40 bg-primary/5 p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                  <Camera className="size-4" /> กล้องสแกนค้นหาสินค้า
+                  <Camera className="size-4 animate-pulse" /> กำลังสแกนค้นหาสินค้าด้วยกล้อง
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    stopSearchScanner();
-                    setSearchScannerActive(false);
-                  }}
-                >
-                  ปิดกล้อง
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={toggleSound}
+                    title={soundEnabled ? "ปิดเสียง" : "เปิดเสียง"}
+                  >
+                    {soundEnabled ? (
+                      <Volume2 className="size-3.5 text-emerald-600" />
+                    ) : (
+                      <VolumeX className="size-3.5 text-muted-foreground" />
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      stopSearchScanner();
+                      setSearchScannerActive(false);
+                    }}
+                  >
+                    ปิดกล้อง
+                  </Button>
+                </div>
               </div>
-              <div className="relative aspect-[16/9] max-h-48 w-full overflow-hidden rounded-lg bg-black mx-auto">
-                <video ref={searchVideoRef} className="size-full object-cover" muted playsInline />
-                <div className="pointer-events-none absolute inset-4 rounded-lg border-2 border-primary/80 animate-pulse" />
+              <div className="relative aspect-[16/9] max-h-52 w-full overflow-hidden rounded-lg bg-black mx-auto shadow-inner">
+                <video
+                  ref={searchVideoRef}
+                  className="size-full object-cover"
+                  muted
+                  playsInline
+                  autoPlay
+                />
+                <div className="pointer-events-none absolute inset-4 rounded-lg border-2 border-primary/80 animate-pulse flex items-center justify-center">
+                  <div className="w-full h-0.5 bg-red-500/80 shadow-[0_0_8px_#ef4444]" />
+                </div>
               </div>
               {searchScanError ? (
-                <p className="text-xs text-destructive text-center">{searchScanError}</p>
+                <p className="text-xs text-destructive text-center font-medium">
+                  {searchScanError}
+                </p>
               ) : (
                 <p className="text-xs text-muted-foreground text-center">
-                  สแกนบาร์โค้ดหรือ QR Code เพื่อกรองสินค้าทันที
+                  เล็งกล้องไปที่บาร์โค้ดสินค้า ระบบจะกรองรายการสินค้าอัตโนมัติ
                 </p>
               )}
             </div>
@@ -720,7 +791,7 @@ function ProductsPage() {
               รายการสินค้าทั้งหมด ({filteredProducts.length} รายการ)
             </CardTitle>
             <CardDescription>
-              ตรวจสอบรหัส SKU, บาร์โค้ด, หมวดหมู่, ราคาขาย, สต็อกคงเหลือ และสถานะเปิด/ปิด
+              ตรวจสอบรหัส SKU, บาร์โค้ด, รูปสินค้า, หมวดหมู่, ราคาขาย, สต็อกคงเหลือ และสถานะเปิด/ปิด
             </CardDescription>
           </div>
         </CardHeader>
@@ -914,14 +985,35 @@ function ProductsPage() {
           setModalOpen(open);
         }}
       >
-        <DialogContent className="w-[94vw] max-w-2xl rounded-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="w-[95vw] max-w-2xl rounded-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader className="pb-2">
-            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
-              <Package className="size-5 text-primary" />
-              {editingProduct ? `แก้ไขข้อมูลสินค้า: ${editingProduct.name}` : "เพิ่มสินค้าใหม่"}
+            <DialogTitle className="text-base sm:text-lg flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Package className="size-5 text-primary" />
+                {editingProduct ? `แก้ไขข้อมูลสินค้า: ${editingProduct.name}` : "เพิ่มสินค้าใหม่"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs rounded-lg gap-1"
+                  onClick={toggleSound}
+                  title={soundEnabled ? "เปิดเสียงสแกน" : "ปิดเสียงสแกน"}
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="size-4 text-emerald-600" />
+                  ) : (
+                    <VolumeX className="size-4 text-muted-foreground" />
+                  )}
+                  <span className="text-[11px] hidden sm:inline">
+                    {soundEnabled ? "เสียงเปิด" : "เสียงปิด"}
+                  </span>
+                </Button>
+              </div>
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              กรอกข้อมูลให้ครบถ้วน ข้อมูล SKU และ Barcode ต้องไม่ซ้ำกับสินค้าอื่น
+              กรอกข้อมูลสินค้า ถ่ายรูป และยิงบาร์โค้ดด้วยกล้องเพื่อบันทึกเข้าระบบ
             </DialogDescription>
           </DialogHeader>
 
@@ -935,7 +1027,98 @@ function ProductsPage() {
           )}
 
           <div className="space-y-4 py-1">
-            {/* Section 1: Identification (SKU & Barcode & Image) */}
+            {/* PROMINENT SCANNER CONTROL BAR (LARGE BUTTONS) */}
+            <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-3 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ScanLine className="size-5 text-primary" />
+                  <div>
+                    <h2 className="text-xs sm:text-sm font-bold text-foreground">
+                      เครื่องสแกนบาร์โค้ด & QR ด้วยกล้อง
+                    </h2>
+                    <p className="text-[11px] text-muted-foreground">
+                      {scannerActive
+                        ? "กำลังทำงาน... เล็งกล้องไปที่บาร์โค้ดสินค้าเพื่อบันทึกรหัสอัตโนมัติ"
+                        : "แตะปุ่มด้านล่างเพื่อเปิดกล้อง หรือสุ่มรหัส EAN-13"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs font-semibold gap-1 rounded-xl bg-background shadow-2xs"
+                    onClick={() => handleAutoGenerateBarcode("EAN_13")}
+                  >
+                    <Sparkles className="size-3.5 text-amber-500" /> สุ่ม EAN-13
+                  </Button>
+                </div>
+              </div>
+
+              {/* Large, High-Visibility Scan Camera Action Button */}
+              <Button
+                type="button"
+                size="lg"
+                variant={scannerActive ? "destructive" : "default"}
+                className={`w-full h-12 sm:h-13 rounded-xl font-bold text-sm sm:text-base gap-2 shadow-sm transition-all active:scale-98 ${
+                  !scannerActive
+                    ? "bg-primary hover:bg-primary/90 text-primary-foreground"
+                    : "bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                }`}
+                onClick={() => {
+                  if (scannerActive) {
+                    stopScanner();
+                    setScannerActive(false);
+                  } else {
+                    setScannerActive(true);
+                  }
+                }}
+              >
+                {scannerActive ? (
+                  <>
+                    <CameraOff className="size-5" /> ปิดกล้องสแกนบาร์โค้ด
+                  </>
+                ) : (
+                  <>
+                    <Camera className="size-5" /> เปิดกล้องสแกนบาร์โค้ด (Camera Scanner)
+                  </>
+                )}
+              </Button>
+
+              {/* Live Camera Viewport if active */}
+              {scannerActive ? (
+                <div className="space-y-2 rounded-xl border bg-black/90 p-2.5 shadow-inner">
+                  <div className="relative aspect-[4/3] max-h-56 sm:max-h-64 w-full overflow-hidden rounded-lg bg-black mx-auto flex items-center justify-center">
+                    <video
+                      ref={videoRef}
+                      className="size-full object-cover"
+                      muted
+                      playsInline
+                      autoPlay
+                    />
+                    <div className="pointer-events-none absolute inset-4 sm:inset-6 rounded-xl border-2 border-primary/90 animate-pulse flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-red-500 shadow-[0_0_10px_#ef4444]" />
+                    </div>
+                  </div>
+                  {scanError ? (
+                    <Alert variant="destructive" className="py-2 text-xs rounded-lg">
+                      <AlertDescription>{scanError}</AlertDescription>
+                    </Alert>
+                  ) : (
+                    <div className="flex items-center justify-between px-1 text-xs text-zinc-300">
+                      <span className="animate-pulse flex items-center gap-1.5">
+                        <span className="size-2 rounded-full bg-emerald-500" />
+                        กำลังสแกนสด... มีเสียงแจ้งเตือนเมื่อพบรหัส
+                      </span>
+                      <span className="text-[11px] text-zinc-400">รองรับ EAN-13, Code 128, QR</span>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Section 1: Identification (SKU & Barcode) */}
             <div className="grid gap-3 sm:grid-cols-2">
               {/* SKU */}
               <div className="space-y-1.5">
@@ -945,7 +1128,7 @@ function ProductsPage() {
                 </div>
                 <Input
                   placeholder="เช่น SKU-FOD-001"
-                  className={`h-10 font-mono text-sm rounded-xl ${skuError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                  className={`h-11 font-mono text-sm rounded-xl ${skuError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                   value={formSku}
                   onChange={(e) => {
                     setFormSku(e.target.value);
@@ -954,51 +1137,17 @@ function ProductsPage() {
                 />
               </div>
 
-              {/* Barcode & Live Camera */}
+              {/* Barcode */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold">รหัสบาร์โค้ด / QR *</Label>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-1.5 text-[10px] text-primary"
-                      onClick={() => handleAutoGenerateBarcode("EAN_13")}
-                      title="สุ่ม EAN-13 (885) พร้อม Check Digit"
-                    >
-                      <Sparkles className="size-3 mr-0.5" /> สุ่ม EAN-13
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={scannerActive ? "secondary" : "outline"}
-                      size="sm"
-                      className="h-6 px-2 text-[11px] gap-1 rounded-md active:scale-95"
-                      onClick={() => {
-                        if (scannerActive) {
-                          stopScanner();
-                          setScannerActive(false);
-                        } else {
-                          setScannerActive(true);
-                          void startScanner();
-                        }
-                      }}
-                    >
-                      {scannerActive ? (
-                        <>
-                          <CameraOff className="size-3" /> ปิดกล้อง
-                        </>
-                      ) : (
-                        <>
-                          <Camera className="size-3" /> ยิงกล้อง
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  <Label className="text-xs font-semibold">รหัสบาร์โค้ด / QR Code *</Label>
+                  {barcodeError && (
+                    <span className="text-[10px] text-destructive">{barcodeError}</span>
+                  )}
                 </div>
                 <Input
                   placeholder="เช่น 8850124001153"
-                  className={`h-10 font-mono text-sm rounded-xl ${barcodeError ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                  className={`h-11 font-mono text-sm rounded-xl ${barcodeError ? "border-destructive focus-visible:ring-destructive" : ""}`}
                   value={formBarcode}
                   onChange={(e) => {
                     setFormBarcode(e.target.value);
@@ -1023,64 +1172,27 @@ function ProductsPage() {
               </div>
             </div>
 
-            {/* Camera Preview Area if active */}
-            {scannerActive ? (
-              <div className="space-y-2 rounded-xl border bg-black/5 p-2.5 dark:bg-black/30">
-                <div className="relative aspect-[4/3] max-h-48 w-full overflow-hidden rounded-lg bg-black mx-auto">
-                  <video ref={videoRef} className="size-full object-cover" muted playsInline />
-                  <div className="pointer-events-none absolute inset-4 rounded-xl border-2 border-primary/80 animate-pulse" />
-                </div>
-                {scanError ? (
-                  <Alert variant="destructive" className="py-2 text-xs">
-                    <AlertDescription>{scanError}</AlertDescription>
-                  </Alert>
-                ) : (
-                  <p className="text-center text-xs text-muted-foreground animate-pulse">
-                    กำลังสแกน... กรุณาเล็งกล้องไปที่บาร์โค้ดหรือ QR Code
-                  </p>
-                )}
-              </div>
-            ) : null}
-
-            {/* Section 2: Name & Image URL */}
+            {/* Section 2: Product Name */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">ชื่อสินค้า *</Label>
               <Input
                 placeholder="เช่น มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g"
-                className="h-10 rounded-xl font-medium"
+                className="h-11 rounded-xl font-medium"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
               />
             </div>
 
-            {/* Image URL with Preview */}
+            {/* Section 3: Product Photo Uploader & Camera Snapshot */}
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <ImageIcon className="size-3.5" /> URL รูปภาพสินค้า (ไม่บังคับ)
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="https://example.com/product-image.jpg"
-                  className="h-10 rounded-xl text-xs"
-                  value={formImageUrl}
-                  onChange={(e) => setFormImageUrl(e.target.value)}
-                />
-                {formImageUrl && (
-                  <div className="size-10 rounded-lg border overflow-hidden shrink-0 bg-muted">
-                    <img
-                      src={formImageUrl}
-                      alt="Preview"
-                      className="size-full object-cover"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
+              <ProductImageUploader
+                value={formImageUrl}
+                onChange={setFormImageUrl}
+                productName={formName}
+              />
             </div>
 
-            {/* Section 3: Master Dropdowns */}
+            {/* Section 4: Master Dropdowns */}
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">หมวดหมู่</Label>
@@ -1100,8 +1212,8 @@ function ProductsPage() {
               </div>
             </div>
 
-            {/* Section 4: Prices */}
-            <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-muted/40 border">
+            {/* Section 5: Prices */}
+            <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-muted/40 border">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">ราคาทุน (บาท)</Label>
                 <Input
@@ -1126,7 +1238,7 @@ function ProductsPage() {
               </div>
             </div>
 
-            {/* Section 5: Inventory & Reorder Management */}
+            {/* Section 6: Inventory & Reorder Management */}
             <div className="grid grid-cols-3 gap-2.5">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">คงเหลือปัจจุบัน</Label>
@@ -1164,8 +1276,8 @@ function ProductsPage() {
               </div>
             </div>
 
-            {/* Section 6: Status Toggle Switch */}
-            <div className="flex items-center justify-between p-3 rounded-xl border bg-background">
+            {/* Section 7: Status Toggle Switch */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl border bg-background">
               <div className="space-y-0.5">
                 <Label className="text-sm font-semibold">สถานะสินค้า (เปิดขาย)</Label>
                 <p className="text-xs text-muted-foreground">
@@ -1189,7 +1301,7 @@ function ProductsPage() {
               ยกเลิก
             </Button>
             <Button
-              className="h-11 sm:h-10 rounded-xl w-full sm:w-auto font-semibold"
+              className="h-11 sm:h-10 rounded-xl w-full sm:w-auto font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
               onClick={handleSaveProduct}
               disabled={!formName.trim() || !formBarcode.trim() || !formSku.trim()}
             >
