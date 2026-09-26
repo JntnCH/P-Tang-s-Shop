@@ -459,10 +459,10 @@ function PosAndIssuePage() {
                     <ScanLine className="size-4 text-primary" /> สแกนบาร์โค้ดเพื่อขายทันที
                   </CardTitle>
                   <Badge
-                    variant={scanStatus === "scanning" ? "default" : "outline"}
+                    variant={scanStatus === "scanning" || scanStatus === "starting" ? "default" : "outline"}
                     className="text-[11px]"
                   >
-                    {scanStatus === "scanning" ? "กล้องเปิด" : "กล้องปิด"}
+                    {scanStatus === "scanning" || scanStatus === "starting" ? "กล้องเปิด" : "กล้องปิด"}
                   </Badge>
                 </CardHeader>
                 <CardContent className="p-4 space-y-3">
@@ -475,7 +475,7 @@ function PosAndIssuePage() {
                       playsInline
                       aria-label="ภาพจากกล้องสำหรับสแกนสินค้าเพื่อขาย"
                     />
-                    {scanStatus !== "scanning" ? (
+                    {scanStatus !== "scanning" && scanStatus !== "starting" ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-4 text-center text-muted-foreground bg-muted/95">
                         <Camera className="size-8 opacity-40 text-primary" />
                         <p className="text-xs font-semibold text-foreground">
@@ -494,7 +494,7 @@ function PosAndIssuePage() {
 
                   {/* Camera Controls */}
                   <div className="flex gap-2">
-                    {scanStatus === "scanning" ? (
+                    {scanStatus === "scanning" || scanStatus === "starting" ? (
                       <>
                         <Button
                           size="sm"

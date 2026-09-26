@@ -37,7 +37,8 @@ export const navItems: NavItem[] = [
 ];
 
 /** เมนูลัดด้านล่างสำหรับมือถือ */
-const mobilePaths = ["/", "/documents", "/products", "/scan", "/receive"];
+// Keep the scanner in the visual center of the five-item bottom navigation.
+const mobilePaths = ["/", "/documents", "/scan", "/products", "/receive"];
 
 export const mobileNavItems: NavItem[] = mobilePaths
   .map((p) => navItems.find((i) => i.to === p))

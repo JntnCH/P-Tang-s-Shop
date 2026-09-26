@@ -437,10 +437,10 @@ function ReceiveCheckPage() {
                   <ScanLine className="size-5 text-primary" /> กล้องสแกนตรวจรับ
                 </span>
                 <Badge
-                  variant={scanStatus === "scanning" ? "default" : "outline"}
+                  variant={scanStatus === "scanning" || scanStatus === "starting" ? "default" : "outline"}
                   className="text-[11px]"
                 >
-                  {scanStatus === "scanning" ? "กล้องทำงาน" : "กล้องปิด"}
+                  {scanStatus === "scanning" || scanStatus === "starting" ? "กล้องทำงาน" : "กล้องปิด"}
                 </Badge>
               </CardTitle>
             </CardHeader>
@@ -454,7 +454,7 @@ function ReceiveCheckPage() {
                   playsInline
                   aria-label="ภาพจากกล้องสำหรับสแกนสินค้า"
                 />
-                {scanStatus !== "scanning" ? (
+                {scanStatus !== "scanning" && scanStatus !== "starting" ? (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground bg-muted/90">
                     <Camera className="size-9 opacity-50" />
                     <p className="text-xs font-semibold text-foreground">
@@ -478,7 +478,7 @@ function ReceiveCheckPage() {
 
               {/* Camera Toggle */}
               <div className="flex gap-2">
-                {scanStatus === "scanning" ? (
+                {scanStatus === "scanning" || scanStatus === "starting" ? (
                   <>
                     <Button
                       size="sm"

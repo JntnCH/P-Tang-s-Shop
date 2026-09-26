@@ -6,6 +6,8 @@ import {
   Camera,
   CameraOff,
   CheckCircle2,
+  Flashlight,
+  FlashlightOff,
   Filter,
   Image as ImageIcon,
   Package,
@@ -183,6 +185,9 @@ function ProductsPage() {
     videoRef,
     status: formScanStatus,
     error: scanError,
+    hasTorch,
+    isTorchOn,
+    toggleTorch,
     start: startScanner,
     stop: stopScanner,
   } = useBarcodeScanner(handleScanDetected, { cooldownMs: 800, playSound: soundEnabled });
@@ -191,6 +196,9 @@ function ProductsPage() {
     videoRef: searchVideoRef,
     status: searchScanStatus,
     error: searchScanError,
+    hasTorch: searchHasTorch,
+    isTorchOn: searchIsTorchOn,
+    toggleTorch: toggleSearchTorch,
     start: startSearchScanner,
     stop: stopSearchScanner,
   } = useBarcodeScanner(handleSearchScanDetected, { cooldownMs: 800, playSound: soundEnabled });
@@ -567,6 +575,25 @@ function ProductsPage() {
                       <VolumeX className="size-3.5 text-muted-foreground" />
                     )}
                   </Button>
+                  {searchHasTorch && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={searchIsTorchOn ? "default" : "outline"}
+                      className="h-7 px-2 text-xs gap-1"
+                      onClick={() => void toggleSearchTorch()}
+                      title={searchIsTorchOn ? "ปิดไฟฉาย" : "เปิดไฟฉาย"}
+                    >
+                      {searchIsTorchOn ? (
+                        <FlashlightOff className="size-3.5" />
+                      ) : (
+                        <Flashlight className="size-3.5 text-amber-500" />
+                      )}
+                      <span className="hidden sm:inline">
+                        {searchIsTorchOn ? "ไฟฉายเปิด" : "ไฟฉายปิด"}
+                      </span>
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -1113,6 +1140,23 @@ function ProductsPage() {
                       </span>
                       <span className="text-[11px] text-zinc-400">รองรับ EAN-13, Code 128, QR</span>
                     </div>
+                  )}
+                  {hasTorch && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isTorchOn ? "default" : "outline"}
+                      className="h-8 rounded-lg text-xs gap-1.5"
+                      onClick={() => void toggleTorch()}
+                      title={isTorchOn ? "ปิดไฟฉาย" : "เปิดไฟฉาย"}
+                    >
+                      {isTorchOn ? (
+                        <FlashlightOff className="size-3.5" />
+                      ) : (
+                        <Flashlight className="size-3.5 text-amber-500" />
+                      )}
+                      {isTorchOn ? "ไฟฉายเปิด" : "เปิดไฟฉาย"}
+                    </Button>
                   )}
                 </div>
               ) : null}
